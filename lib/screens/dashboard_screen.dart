@@ -142,7 +142,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
             ),
-      bottomNavigationBar: AppBottomNav(currentIndex: 0, onTap: (_) {}, onAddTap: () {}),
+      bottomNavigationBar: AppBottomNav(
+        currentIndex: 0,
+        onTap: (index) {
+          if (index == 0) return;
+          if (index == 1) Navigator.pushNamed(context, '/diary');
+          if (index == 2) Navigator.pushNamed(context, '/reports');
+          if (index == 3) Navigator.pushNamed(context, '/settings');
+        },
+        onAddTap: () => Navigator.pushNamed(context, '/new-appointment'),
+      ),
     );
   }
 

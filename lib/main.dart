@@ -5,6 +5,13 @@ import 'screens/dashboard_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/register_screen.dart';
+import 'screens/diary_screen.dart';
+import 'screens/forgot_password_screen.dart';
+import 'screens/settings_screen.dart';
+import 'screens/invite_assistant_screen.dart';
+import 'screens/pending_invite_screen.dart';
+import 'screens/new_appointment_screen.dart';
+import 'screens/reports_screen.dart';
 
 void main() {
   runApp(const AppointmentApp());
@@ -26,6 +33,13 @@ class AppointmentApp extends StatelessWidget {
         '/login': (context) => const SignInScreen(),
         '/dashboard': (context) => const DashboardScreen(),
         '/notifications': (context) => const NotificationsScreen(),
+        '/diary': (context) => DiaryScreen(),
+        '/forgot-password': (context) => const ForgotPasswordScreen(),
+        '/settings': (context) => const SettingsScreen(),
+        '/invite-assistant': (context) => const InviteAssistantScreen(),
+        '/pending-invite': (context) => const PendingInviteScreen(),
+        '/new-appointment': (context) => const NewAppointmentScreen(),
+        '/reports': (context) => const ReportsScreen(),
       },
     );
   }

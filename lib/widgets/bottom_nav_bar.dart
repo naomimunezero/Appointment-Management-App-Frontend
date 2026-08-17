@@ -14,20 +14,23 @@ class AppBottomNav extends StatelessWidget {
       clipBehavior: Clip.none,
       alignment: Alignment.topCenter,
       children: [
-        Container(
-          height: 64,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 12, offset: const Offset(0, -2))],
-          ),
-          child: Row(
-            children: [
-              _navItem(Icons.home_rounded, 'Home', 0),
-              _navItem(Icons.event_note_rounded, 'Diary', 1),
-              const Expanded(child: SizedBox()),
-              _navItem(Icons.bar_chart_rounded, 'Reports', 2),
-              _navItem(Icons.settings_rounded, 'Settings', 3),
-            ],
+        SafeArea(
+          top: false, // only pad the bottom; this widget never touches the top of the screen
+          child: Container(
+            height: 64,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 12, offset: const Offset(0, -2))],
+            ),
+            child: Row(
+              children: [
+                _navItem(Icons.home_rounded, 'Home', 0),
+                _navItem(Icons.event_note_rounded, 'Diary', 1),
+                const Expanded(child: SizedBox()),
+                _navItem(Icons.bar_chart_rounded, 'Reports', 2),
+                _navItem(Icons.settings_rounded, 'Settings', 3),
+              ],
+            ),
           ),
         ),
         Positioned(

@@ -22,7 +22,7 @@ class _SplashScreenState extends State<SplashScreen> {
     // NOTE: right now this always goes to Register. If you want returning
     // users to skip straight to sign-in or the dashboard, this is where
     // you'd check ApiService.getUserName() (or a token) and branch.
-    Navigator.pushReplacementNamed(context, '/register');
+    Navigator.pushNamed(context, '/register');
   }
 
   @override

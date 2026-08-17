@@ -33,7 +33,7 @@ class RecentActivityItem extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border(left: BorderSide(color: _statusColor, width: 3)),
+        //border: Border(left: BorderSide(color: _statusColor, width: 3)),
       ),
       child: Row(
         children: [
