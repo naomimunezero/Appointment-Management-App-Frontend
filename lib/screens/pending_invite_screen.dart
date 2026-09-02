@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/permission_labels.dart';
 
 class PendingInviteScreen extends StatefulWidget {
   const PendingInviteScreen({super.key});
@@ -61,7 +62,7 @@ class _PendingInviteScreenState extends State<PendingInviteScreen> {
     if (email.isNotEmpty && email != 'owner@example.com') {
       return 'You were invited by $email';
     }
-    return 'You have a pending assistant invite';
+    return 'You have a pending assistant invite from';
   }
 
   List<String> _permissions(Map<String, dynamic> invite) {
@@ -72,14 +73,17 @@ class _PendingInviteScreenState extends State<PendingInviteScreen> {
     return const [];
   }
 
-  String _token(Map<String, dynamic> invite) {
-    return invite['token']?.toString() ?? '';
+  // CHANGED: was _token() reading invite['token']; now reads the invite's id
+  int? _inviteId(Map<String, dynamic> invite) {
+    final id = invite['id'];
+    if (id is int) return id;
+    return int.tryParse(id?.toString() ?? '');
   }
 
   Future<void> _accept(Map<String, dynamic> invite) async {
-    final token = _token(invite);
-    if (token.isEmpty) {
-      setState(() => _error = 'Missing invite token.');
+    final inviteId = _inviteId(invite); // CHANGED
+    if (inviteId == null) {
+      setState(() => _error = 'Missing invite id.'); // CHANGED message
       return;
     }
 
@@ -88,7 +92,7 @@ class _PendingInviteScreenState extends State<PendingInviteScreen> {
       _error = null;
     });
 
-    final result = await ApiService.acceptAssistantInvite(token: token);
+    final result = await ApiService.acceptAssistantInvite(inviteId: inviteId); // CHANGED
     setState(() => _loading = false);
 
     if (!mounted) return;
@@ -101,9 +105,9 @@ class _PendingInviteScreenState extends State<PendingInviteScreen> {
   }
 
   Future<void> _decline(Map<String, dynamic> invite) async {
-    final token = _token(invite);
-    if (token.isEmpty) {
-      setState(() => _error = 'Missing invite token.');
+    final inviteId = _inviteId(invite); // CHANGED
+    if (inviteId == null) {
+      setState(() => _error = 'Missing invite id.'); // CHANGED message
       return;
     }
 
@@ -112,7 +116,7 @@ class _PendingInviteScreenState extends State<PendingInviteScreen> {
       _error = null;
     });
 
-    final result = await ApiService.declineAssistantInvite(token: token);
+    final result = await ApiService.declineAssistantInvite(inviteId: inviteId); // CHANGED
     setState(() => _loading = false);
 
     if (!mounted) return;
@@ -175,7 +179,7 @@ class _PendingInviteScreenState extends State<PendingInviteScreen> {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        _permissionLabel(permission),
+                        permissionLabel(permission),
                         style: const TextStyle(color: AppColors.orange, fontWeight: FontWeight.w700),
                       ),
                     );
@@ -221,18 +225,5 @@ class _PendingInviteScreenState extends State<PendingInviteScreen> {
         ),
       ),
     );
-  }
-
-  String _permissionLabel(String permission) {
-    switch (permission) {
-      case 'manage_appointments':
-        return 'Manage appointments';
-      case 'record_outcomes':
-        return 'Record outcomes';
-      case 'export_reports':
-        return 'Export reports';
-      default:
-        return permission.replaceAll('_', ' ');
-    }
   }
 }

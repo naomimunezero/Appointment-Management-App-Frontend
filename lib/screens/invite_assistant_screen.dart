@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/validators.dart';
+import '../utils/permission_labels.dart';
 
 class InviteAssistantScreen extends StatefulWidget {
   const InviteAssistantScreen({super.key});
@@ -13,11 +14,8 @@ class InviteAssistantScreen extends StatefulWidget {
 class _InviteAssistantScreenState extends State<InviteAssistantScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
-  final List<String> _availablePermissions = const [
-    'manage_appointments',
-    'record_outcomes',
-    'export_reports',
-  ];
+  final _nameController = TextEditingController();
+  
   final Set<String> _selectedPermissions = <String>{};
   bool _loading = false;
   String? _error;
@@ -26,6 +24,7 @@ class _InviteAssistantScreenState extends State<InviteAssistantScreen> {
   @override
   void dispose() {
     _emailController.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -48,6 +47,7 @@ class _InviteAssistantScreenState extends State<InviteAssistantScreen> {
     final result = await ApiService.inviteAssistant(
       _emailController.text.trim(),
       permissions,
+      name: _nameController.text.trim(),
     );
 
     setState(() => _loading = false);
@@ -94,6 +94,17 @@ class _InviteAssistantScreenState extends State<InviteAssistantScreen> {
                 ),
                 const SizedBox(height: 20),
                 const Text(
+                  'Assistant name',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.5, color: AppColors.navy),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(hintText: 'Enter name.', hintStyle: TextStyle(color: Colors.grey, fontSize: 13)),
+                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Name is required' : null,
+                ),
+                const SizedBox(height: 20),
+                const Text(
                   'Assistant email',
                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.5, color: AppColors.navy),
                 ),
@@ -104,18 +115,9 @@ class _InviteAssistantScreenState extends State<InviteAssistantScreen> {
                   autovalidateMode: AutovalidateMode.onUserInteraction,
                   decoration: const InputDecoration(
                     hintText: 'assistant@company.com',
+                    hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Email is required';
-                    }
-                    final email = value.trim();
-                    final regex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-                    if (!regex.hasMatch(email)) {
-                      return 'Enter a valid email';
-                    }
-                    return null;
-                  },
+                  validator: emailValidator,
                 ),
                 const SizedBox(height: 24),
                 const Text(
@@ -126,9 +128,9 @@ class _InviteAssistantScreenState extends State<InviteAssistantScreen> {
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
-                  children: _availablePermissions.map((permission) {
+                  children: availablePermissions.map((permission) {
                     final selected = _selectedPermissions.contains(permission);
-                    final label = _permissionLabel(permission);
+                    final label = permissionLabel(permission);
                     return FilterChip(
                       selected: selected,
                       onSelected: (_) => setState(() {
@@ -195,18 +197,5 @@ class _InviteAssistantScreenState extends State<InviteAssistantScreen> {
         ),
       ),
     );
-  }
-
-  String _permissionLabel(String permission) {
-    switch (permission) {
-      case 'manage_appointments':
-        return 'Manage appointments';
-      case 'record_outcomes':
-        return 'Record outcomes';
-      case 'export_reports':
-        return 'Export reports';
-      default:
-        return permission;
-    }
   }
 }

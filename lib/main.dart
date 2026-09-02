@@ -12,6 +12,9 @@ import 'screens/invite_assistant_screen.dart';
 import 'screens/pending_invite_screen.dart';
 import 'screens/new_appointment_screen.dart';
 import 'screens/reports_screen.dart';
+import 'screens/appointment_details_screen.dart';
+import 'screens/record_outcome_screen.dart';
+import 'screens/action_points_tracker_screen.dart';
 
 void main() {
   runApp(const AppointmentApp());
@@ -27,6 +30,27 @@ class AppointmentApp extends StatelessWidget {
       theme: AppTheme.light(),
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
+      onGenerateRoute: (settings) {
+        if (settings.name == '/appointment-details') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final appointmentId = args?['appointmentId'] as int?;
+          if (appointmentId != null) {
+            return MaterialPageRoute(
+              builder: (context) => AppointmentDetailsScreen(appointmentId: appointmentId),
+            );
+          }
+        }
+        if (settings.name == '/record-outcome') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final appointmentId = args?['appointmentId'] as int?;
+          if (appointmentId != null) {
+            return MaterialPageRoute(
+              builder: (context) => RecordOutcomeScreen(appointmentId: appointmentId),
+            );
+          }
+        }
+        return null;
+      },
       routes: {
         '/': (context) => const SplashScreen(),
         '/register': (context) => const RegisterScreen(),
@@ -40,6 +64,7 @@ class AppointmentApp extends StatelessWidget {
         '/pending-invite': (context) => const PendingInviteScreen(),
         '/new-appointment': (context) => const NewAppointmentScreen(),
         '/reports': (context) => const ReportsScreen(),
+        '/action-points': (context) => const ActionPointsTrackerScreen(),
       },
     );
   }

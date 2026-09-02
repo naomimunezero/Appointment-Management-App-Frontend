@@ -1,19 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/appointment.dart';
-
-Color statusColor(String status) {
-  switch (status) {
-    case 'held':
-      return AppColors.green;
-    case 'missed':
-      return AppColors.red;
-    case 'cancelled':
-      return Colors.grey;
-    default:
-      return AppColors.navy;
-  }
-}
+import '../utils/status_utils.dart';
 
 class InReportCard extends StatelessWidget {
   final Appointment? selected;

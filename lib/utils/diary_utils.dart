@@ -1,6 +1,3 @@
-import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
-
 /// Small helpers shared by the diary screen and its widgets:
 /// date formatting (week ranges, day headers) and status colors/labels.
 
@@ -50,21 +47,3 @@ List<String> splitTime(String? timeStr) {
   return [timeStr, ''];
 }
 
-/// Color used for the status pill text and the card's left accent bar.
-Color statusColor(String status) {
-  switch (status.toLowerCase()) {
-    case 'held':
-      return const Color(0xFF1E8A6E);
-    case 'upcoming':
-      return const Color(0xFF0E8FA0);
-    case 'missed':
-      return AppColors.red;
-    case 'cancelled':
-      return Colors.grey;
-    default:
-      return AppColors.navy;
-  }
-}
-
-/// Light background tint for the status pill.
-Color statusBackground(String status) => statusColor(status).withOpacity(0.12);

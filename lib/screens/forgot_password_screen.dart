@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
+import '../widgets/field_label.dart';
+import '../utils/validators.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -241,7 +243,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _FieldLabel('EMAIL ADDRESS'),
+          const FieldLabel('EMAIL ADDRESS'),
           const SizedBox(height: 8),
           TextFormField(
             controller: _emailController,
@@ -250,12 +252,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               hintText: 'vincent@nugsoft.com',
               hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
             ),
-            validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'Email is required';
-              final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-              if (!emailRegex.hasMatch(v.trim())) return 'Enter a valid email';
-              return null;
-            },
+            validator: emailValidator,
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
@@ -275,7 +272,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _FieldLabel('RESET CODE'),
+          const FieldLabel('RESET CODE'),
           const SizedBox(height: 8),
           TextFormField(
             controller: _codeController,
@@ -318,7 +315,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _FieldLabel('NEW PASSWORD'),
+          const FieldLabel('NEW PASSWORD'),
           const SizedBox(height: 8),
           TextFormField(
             controller: _newPasswordController,
@@ -337,7 +334,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             },
           ),
           const SizedBox(height: 14),
-          const _FieldLabel('CONFIRM PASSWORD'),
+          const FieldLabel('CONFIRM PASSWORD'),
           const SizedBox(height: 8),
           TextFormField(
             controller: _confirmPasswordController,
@@ -384,20 +381,3 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 }
 
-class _FieldLabel extends StatelessWidget {
-  final String text;
-  const _FieldLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return RichText(
-      text: TextSpan(
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: Colors.grey[700]),
-        children: [
-          TextSpan(text: text),
-          const TextSpan(text: ' *', style: TextStyle(color: AppColors.red)),
-        ],
-      ),
-    );
-  }
-}

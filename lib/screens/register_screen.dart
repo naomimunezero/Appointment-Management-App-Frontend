@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
+import '../widgets/field_label.dart';
+import '../utils/validators.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -118,7 +120,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       style: TextStyle(color: Colors.grey[600], fontSize: 14)),
                 ),
                 const SizedBox(height: 22),
-                const _FieldLabel('FULL NAME'),
+                const FieldLabel('FULL NAME'),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _nameController,
@@ -127,11 +129,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     hintText: 'Vincent Mugisha',
                     hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
                   ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Full name is required' : null,
+                  validator: requiredValidator('Full name'),
                 ),
                 const SizedBox(height: 14),
-                const _FieldLabel('EMAIL ADDRESS'),
+                const FieldLabel('EMAIL ADDRESS'),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _emailController,
@@ -140,16 +141,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     hintText: 'vincent@nugsoft.com',
                     hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
                   ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Email is required';
-                    final email = v.trim();
-                    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-                    if (!emailRegex.hasMatch(email)) return 'Enter a valid email';
-                    return null;
-                  },
+                  validator: emailValidator,
                 ),
                 const SizedBox(height: 14),
-                const _FieldLabel('PASSWORD'),
+                const FieldLabel('PASSWORD'),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _passwordController,
@@ -168,7 +163,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   },
                 ),
                 const SizedBox(height: 14),
-                const _FieldLabel('CONFIRM PASSWORD'),
+                const FieldLabel('CONFIRM PASSWORD'),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _confirmController,
@@ -237,22 +232,3 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 }
 
-class _FieldLabel extends StatelessWidget {
-  // Pass the label WITHOUT the "*" (e.g. 'FULL NAME') — this widget adds
-  // a red asterisk on its own so it's never grey like the rest of the label.
-  final String text;
-  const _FieldLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return RichText(
-      text: TextSpan(
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: Colors.grey[700]),
-        children: [
-          TextSpan(text: text),
-          const TextSpan(text: ' *', style: TextStyle(color: AppColors.red)),
-        ],
-      ),
-    );
-  }
-}

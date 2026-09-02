@@ -23,8 +23,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   ActivityPeriod _period = ActivityPeriod.thisWeek;
   bool _activityLoading = true;
-  List<String> _activityLabels = [];
-  List<int> _activityValues = [];
+  List<String> _dayLabels = [];
+  List<int> _dayValues = [];
+  List<String> _timeLabels = [];
+  List<int> _timeValues = [];
 
   @override
   void initState() {
@@ -34,9 +36,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadActivity(_period);
   }
 
-  // The name was already saved locally at login/register time (see
-  // ApiService.login/register) — so this is just a local read, no
-  // network call needed.
   Future<void> _loadUserName() async {
     final name = await ApiService.getUserName();
     if (name != null && name.isNotEmpty) {
@@ -47,44 +46,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _loadSummary() async {
     final data = await ApiService.getDashboardSummary();
     setState(() {
-      _summary = data;
+      _summary = normalizeDashboardPayload(data);
       _loading = false;
     });
   }
 
-  // Loads bar-chart data for whichever period pill is selected.
-  //
-  // IMPORTANT — you'll need to add this method to ApiService:
-  //   static Future<Map<String, dynamic>> getActivity(String period) async { ... }
-  // It should call a backend endpoint that groups appointments by day (or
-  // week, for longer ranges) for the chosen period, and return:
-  //   { "labels": ["M","T","W","T","F","S","S"], "values": [0,2,0,3,1,0,0] }
-  //
-  // Until that endpoint exists, the catch block below keeps the screen
-  // working by showing an empty chart instead of crashing.
   Future<void> _loadActivity(ActivityPeriod period) async {
     setState(() => _activityLoading = true);
     try {
       final data = await ApiService.getActivity(period.name);
+      final demoSeries = demoActivitySeries(period.name);
       setState(() {
-        _activityLabels = List<String>.from(data['labels'] ?? []);
-        _activityValues = List<int>.from(data['values'] ?? []);
+        _dayLabels = _extractLabels(data, ['day_labels', 'days_labels', 'labels', 'week_labels', 'week_days']).isNotEmpty
+            ? _extractLabels(data, ['day_labels', 'days_labels', 'labels', 'week_labels', 'week_days'])
+            : (demoSeries['day_labels'] as List).map((e) => e.toString()).toList();
+        _dayValues = _extractValues(data, ['day_values', 'days_values', 'values', 'week_values', 'meetings']).isNotEmpty
+            ? _extractValues(data, ['day_values', 'days_values', 'values', 'week_values', 'meetings'])
+            : (demoSeries['day_values'] as List).map((e) => int.tryParse(e.toString()) ?? 0).toList();
+        _timeLabels = _extractLabels(data, ['time_labels', 'hour_labels', 'time_slots', 'slots', 'time']).isNotEmpty
+            ? _extractLabels(data, ['time_labels', 'hour_labels', 'time_slots', 'slots', 'time'])
+            : (demoSeries['time_labels'] as List).map((e) => e.toString()).toList();
+        _timeValues = _extractValues(data, ['time_values', 'hour_values', 'appointment_counts', 'appointments']).isNotEmpty
+            ? _extractValues(data, ['time_values', 'hour_values', 'appointment_counts', 'appointments'])
+            : (demoSeries['time_values'] as List).map((e) => int.tryParse(e.toString()) ?? 0).toList();
+
         _activityLoading = false;
       });
     } catch (_) {
-      final labels = _fallbackLabels(period);
+      final demoSeries = demoActivitySeries(period.name);
       setState(() {
-        _activityLabels = labels;
-        _activityValues = List.filled(labels.length, 0);
+        _dayLabels = (demoSeries['day_labels'] as List).map((e) => e.toString()).toList();
+        _dayValues = (demoSeries['day_values'] as List).map((e) => int.tryParse(e.toString()) ?? 0).toList();
+        _timeLabels = (demoSeries['time_labels'] as List).map((e) => e.toString()).toList();
+        _timeValues = (demoSeries['time_values'] as List).map((e) => int.tryParse(e.toString()) ?? 0).toList();
         _activityLoading = false;
       });
     }
   }
 
+  List<String> _extractLabels(Map<String, dynamic> source, List<String> possibleKeys) {
+    for (final key in possibleKeys) {
+      final value = source[key];
+      if (value is List) {
+        return value.map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList();
+      }
+    }
+    return const [];
+  }
+
+  List<int> _extractValues(Map<String, dynamic> source, List<String> possibleKeys) {
+    for (final key in possibleKeys) {
+      final value = source[key];
+      if (value is List) {
+        return value.map((e) => int.tryParse(e?.toString() ?? '') ?? 0).toList();
+      }
+    }
+    return const [];
+  }
+
   List<String> _fallbackLabels(ActivityPeriod period) {
     switch (period) {
       case ActivityPeriod.today:
-        return const ['Today'];
+        return const ['Now'];
       case ActivityPeriod.thisWeek:
       case ActivityPeriod.last7Days:
         return const ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -114,7 +137,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          NextAppointmentCard(appointment: next),
+                          NextAppointmentCard(
+                            appointment: next,
+                            onTap: next != null && next['id'] != null
+                                ? () {
+                                    Navigator.pushNamed(
+                                      context,
+                                      '/appointment-details',
+                                      arguments: {'appointmentId': next['id'] as int},
+                                    );
+                                  }
+                                : null,
+                          ),
                           const SizedBox(height: 20),
                           TimeFilterTabs(
                             selected: _period,
@@ -129,11 +163,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             held: _summary?['held'] ?? 0,
                             missed: _summary?['missed'] ?? 0,
                             actionsDue: _summary?['action_points_pending'] ?? 0,
+                            onUpcomingTap: () => _showCategoryAppointments('upcoming'),
+                            onHeldTap: () => _showCategoryAppointments('held'),
+                            onMissedTap: () => _showCategoryAppointments('missed'),
+                            onActionsTap: () => _showActionPoints(),
                           ),
                           const SizedBox(height: 20),
                           _buildActivityCard(),
                           const SizedBox(height: 16),
-                          ..._buildRecentActivity(),
+                          _buildRecentHeldAppointments(),
                         ],
                       ),
                     ),
@@ -200,6 +238,149 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _buildRecentHeldAppointments() {
+    final dynamic rawAppointments =
+        _summary?['recent_held_appointments'] ??
+        _summary?['recentHeldAppointments'] ??
+        _summary?['held_appointments'] ??
+        _summary?['heldAppointments'] ??
+        const [];
+
+    final List appointments = rawAppointments is List
+        ? rawAppointments
+        : (rawAppointments is Map ? extractListFromDashboard(rawAppointments) : const []);
+
+    final displayLimit = appointments.length > 5 ? appointments.sublist(0, 5) : appointments;
+
+    if (displayLimit.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'RECENT HELD APPOINTMENTS',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: AppColors.navy,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No held appointments yet',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[400],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'RECENT HELD APPOINTMENTS',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: AppColors.navy,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...displayLimit.map<Widget>((apt) {
+            final item = apt is Map ? apt : <String, dynamic>{};
+            final id = item['id'] ?? item['appointment_id'] ?? item['appointmentId'];
+            final appointmentId = int.tryParse(id?.toString() ?? '');
+            final title = item['purpose'] ?? item['title'] ?? 'Appointment';
+            final dateValue = item['appointment_date'] ?? item['date'] ?? 'No date';
+            final subtitle = 'Held ${_formatTimeDisplay(dateValue)}';
+
+            return Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: appointmentId == null
+                    ? null
+                    : () {
+                        Navigator.pushNamed(
+                          context,
+                          '/appointment-details',
+                          arguments: {'appointmentId': appointmentId},
+                        );
+                      },
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFEAEAEA)),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(title.toString(), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                            const SizedBox(height: 2),
+                            Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.green.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          'HELD',
+                          style: TextStyle(
+                            color: AppColors.green,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActivityCard() {
     return Container(
       width: double.infinity,
@@ -223,8 +404,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 16),
           _activityLoading
-              ? const SizedBox(height: 110, child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
-              : ActivityChart(labels: _activityLabels, values: _activityValues),
+              ? const SizedBox(height: 150, child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: ActivityChart(
+                        title: 'MEETINGS',
+                        labels: _dayLabels,
+                        values: _dayValues,
+                        accentColor: AppColors.navy,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ActivityChart(
+                        title: 'TIME',
+                        labels: _timeLabels,
+                        values: _timeValues,
+                        accentColor: AppColors.orange,
+                      ),
+                    ),
+                  ],
+                ),
         ],
       ),
     );
@@ -254,15 +456,185 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  List<Widget> _buildRecentActivity() {
-    final List recent = _summary?['recent_activity'] ?? [];
-    if (recent.isEmpty) return [const NoRecentActivity()];
-    return recent.map<Widget>((item) {
-      return RecentActivityItem(
-        title: item['title'] ?? '',
-        subtitle: item['subtitle'] ?? '',
-        status: item['status'] ?? '',
+  String _formatTimeDisplay(String value) {
+    final text = value.toString().trim();
+    if (text.isEmpty) return 'No time';
+
+    if (text.contains('T')) {
+      final datePart = text.split('T').first;
+      final timePart = text.split('T').last;
+      final cleanTime = timePart.split('.').first;
+      return '$datePart $cleanTime';
+    }
+
+    return text;
+  }
+
+  void _showCategoryAppointments(String category) {
+    final items = _extractCategoryAppointments(category);
+    if (items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No $category appointments available right now.')),
       );
-    }).toList();
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        height: MediaQuery.of(context).size.height * 0.7,
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 48,
+                height: 5,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            Text(
+              category.toUpperCase(),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.navy),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView.separated(
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (_, index) {
+                  final item = items[index];
+                  final title = item['purpose'] ?? item['title'] ?? item['name'] ?? 'Appointment';
+                  final date = item['appointment_date'] ?? item['date'] ?? item['scheduled_at'] ?? 'No date';
+                  final id = item['id'] ?? item['appointment_id'] ?? item['appointmentId'];
+                  final appointmentId = int.tryParse(id?.toString() ?? '');
+
+                  return ListTile(
+                    title: Text(title.toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text(date.toString()),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: appointmentId == null
+                        ? null
+                        : () {
+                            Navigator.pop(context);
+                            Navigator.pushNamed(
+                              context,
+                              '/appointment-details',
+                              arguments: {'appointmentId': appointmentId},
+                            );
+                          },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showActionPoints() {
+    final items = (_summary?['action_points'] ?? _summary?['action_points_due'] ?? const []) as List;
+    if (items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No action points due yet.')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 48,
+                height: 5,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            const Text('ACTIONS DUE', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.navy)),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView.builder(
+                itemCount: items.length,
+                itemBuilder: (_, index) {
+                  final item = items[index] is Map ? items[index] as Map : <String, dynamic>{};
+                  final title = item['title'] ?? item['description'] ?? 'Action point';
+                  final due = item['due_date'] ?? item['date'] ?? 'No due date';
+                  return ListTile(
+                    title: Text(title.toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text(due.toString()),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _extractCategoryAppointments(String category) {
+    final summary = normalizeDashboardPayload(_summary ?? {});
+
+    final keys = [
+      '${category}_appointments',
+      '${category}Appointments',
+      '${category}_items',
+      '${category}Items',
+      'appointments_${category}',
+      'appointments${category[0].toUpperCase()}${category.substring(1)}',
+      category,
+    ];
+
+    for (final key in keys) {
+      final value = summary[key];
+      if (value is List) {
+        return value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+      if (value is Map) {
+        final extracted = extractListFromDashboard(value);
+        if (extracted.isNotEmpty) {
+          return extracted;
+        }
+      }
+    }
+
+    for (final value in summary.values) {
+      if (value is List) {
+        final matches = value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        if (matches.isNotEmpty && matches.first.containsKey('status')) {
+          return matches;
+        }
+      }
+    }
+
+    return const [];
   }
 }

@@ -35,9 +35,13 @@ class Appointment {
       startTime: json['start_time'] ?? '',
       durationMinutes: json['duration_minutes'] ?? 0,
       personToMeet: json['person_to_meet'],
+
       attendees: json['attendees'] != null
-          ? List<String>.from(json['attendees'])
-          : (json['person_to_meet'] != null ? [json['person_to_meet']] : []),
+        ? List<String>.from(
+            (json['attendees'] as List).map((a) => a is Map ? (a['name'] ?? a['email'] ?? '') : a.toString()),
+          )
+        : (json['person_to_meet'] != null ? [json['person_to_meet']] : []),
+
       discussionNotes: json['discussion_notes'],
       location: json['location'],
       status: json['status'] ?? 'upcoming',

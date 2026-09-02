@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/report_summary.dart';
+import '../models/app_user.dart';
+import '../models/appointment.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.1.82:8000/api';
+  static const String baseUrl = 'http://127.0.0.1:8000/api';
 
   static Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -17,7 +19,6 @@ class ApiService {
   }
 
   // NEW: saves the user's name at the same time we save the token,
-  // so the dashboard can show it without any extra network call.
   static Future<void> _saveUserName(String? name) async {
     if (name == null) return;
     final prefs = await SharedPreferences.getInstance();
@@ -49,7 +50,7 @@ class ApiService {
       if (response.statusCode == 200 || response.statusCode == 201) {
         await _saveToken(data['token']);
         await _saveUserName(data['user']?['name']); // NEW
-        return {'success': true, 'user': data['user']};
+        return {'success': true, 'user': AppUser.fromJson(data['user'])};
       }
       return {'success': false, 'message': data['message'] ?? 'Registration failed'};
     } catch (e) {
@@ -72,7 +73,7 @@ class ApiService {
         await _saveUserName(data['user']?['name']);
         return {
           'success': true,
-          'user': data['user'],
+          'user': AppUser.fromJson(data['user']),
           'pendingInvites': data['pendingInvites'] ?? const [],
         };
       }
@@ -82,7 +83,7 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> inviteAssistant(String email, List<String> permissions) async {
+  static Future<Map<String, dynamic>> inviteAssistant(String email, List<String> permissions,{String? name}) async {
     try {
       final token = await _getToken();
       final response = await http.post(
@@ -92,7 +93,7 @@ class ApiService {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: jsonEncode({'email': email, 'permissions': permissions}),
+        body: jsonEncode({'email': email,'name': name, 'permissions': permissions}),
       ).timeout(const Duration(seconds: 10));
 
       final data = jsonDecode(response.body);
@@ -105,48 +106,24 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> acceptAssistantInvite({required String token}) async {
-    try {
-      final authToken = await _getToken();
-      final response = await http.post(
-        Uri.parse('$baseUrl/assistant-invites/$token/accept'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-      ).timeout(const Duration(seconds: 10));
-
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return {'success': true, 'data': data};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Unable to accept invitation'};
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: ${e.toString()}'};
-    }
+  static Future<Map<String, dynamic>> acceptAssistantInvite({required int inviteId}) async {
+    final token = await _getToken();
+    final response = await http.post(
+      Uri.parse('$baseUrl/assistant-invites/$inviteId/accept'),
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+    );
+    final data = jsonDecode(response.body);
+    return response.statusCode == 200 ? {'success': true, ...data} : {'success': false, 'message': data['message']};
   }
 
-  static Future<Map<String, dynamic>> declineAssistantInvite({required String token}) async {
-    try {
-      final authToken = await _getToken();
-      final response = await http.post(
-        Uri.parse('$baseUrl/assistant-invites/$token/decline'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-      ).timeout(const Duration(seconds: 10));
-
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return {'success': true, 'data': data};
-      }
-      return {'success': false, 'message': data['message'] ?? 'Unable to decline invitation'};
-    } catch (e) {
-      return {'success': false, 'message': 'Network error: ${e.toString()}'};
-    }
+  static Future<Map<String, dynamic>> declineAssistantInvite({required int inviteId}) async {
+    final token = await _getToken();
+    final response = await http.post(
+      Uri.parse('$baseUrl/assistant-invites/$inviteId/decline'),
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+    );
+    final data = jsonDecode(response.body);
+    return response.statusCode == 200 ? {'success': true, ...data} : {'success': false, 'message': data['message']};
   }
 
   static Future<Map<String, dynamic>> getDashboardSummary() async {
@@ -242,10 +219,6 @@ class ApiService {
     }
   }
 
-    // NEW: step 1 of forgot-password — sends a reset code to the user's email.
-  // Expects a Laravel route e.g. POST /api/forgot-password { email }
-  // that generates a short-lived code (OTP), emails it, and returns
-  // { message: '...' } on success (200) or { message: '...' } on failure (4xx).
   static Future<Map<String, dynamic>> forgotPassword(String email) async {
     final response = await http.post(
       Uri.parse('$baseUrl/forgot-password'),
@@ -292,7 +265,7 @@ class ApiService {
     required String date,
     required String startTime,
     required int durationMinutes,
-    required List<String> attendeeEmails,
+    required List<Map<String, String>> attendees,
     required String locationType, // 'physical' or 'online'
     String? location,
     String? zoomLink,
@@ -312,7 +285,7 @@ class ApiService {
           'appointment_date': date,
           'start_time': startTime,
           'duration_minutes': durationMinutes,
-          'attendee_emails': attendeeEmails,
+          'attendees': attendees,
           'location_type': locationType,
           'location': location,
           'zoom_link': zoomLink,
@@ -445,5 +418,124 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
     );
     return ReportSummary.fromJson(jsonDecode(response.body));
+  }
+
+  // Get detailed appointment info
+  static Future<Appointment> getAppointmentDetails(int appointmentId) async {
+    try {
+      final token = await _getToken();
+      final response = await http.get(
+        Uri.parse('$baseUrl/appointments/$appointmentId'),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return Appointment.fromJson(data);
+      }
+      throw Exception('Failed to load appointment details');
+    } catch (e) {
+      throw Exception('Error loading appointment: ${e.toString()}');
+    }
+  }
+
+  // Record appointment outcome
+  static Future<Map<String, dynamic>> recordAppointmentOutcome(int appointmentId, {
+    String? discussionNotes,
+    List<Map<String, dynamic>>? actionPoints,
+    List<String>? attendees,
+  }) async {
+    final token = await _getToken();
+    final payload = {
+      'discussion_notes': discussionNotes,
+      'action_points': actionPoints,
+      'attendees': attendees,
+      'status': 'held',
+    };
+
+    final attempts = [
+      {
+        'method': 'PUT',
+        'url': '$baseUrl/appointments/$appointmentId/outcome',
+        'body': payload,
+      },
+      {
+        'method': 'POST',
+        'url': '$baseUrl/appointments/$appointmentId/record-outcome',
+        'body': payload,
+      },
+      {
+        'method': 'POST',
+        'url': '$baseUrl/appointments/$appointmentId/mark-held',
+        'body': {'status': 'held'},
+      },
+      {
+        'method': 'POST',
+        'url': '$baseUrl/appointments/$appointmentId/hold',
+        'body': {'status': 'held'},
+      },
+      {
+        'method': 'PUT',
+        'url': '$baseUrl/appointments/$appointmentId',
+        'body': {'status': 'held', 'discussion_notes': discussionNotes, 'attendees': attendees},
+      },
+    ];
+
+    Object? lastError;
+    for (final attempt in attempts) {
+      try {
+        final method = attempt['method'] as String;
+        final url = attempt['url'] as String;
+        final body = attempt['body'] as Map<String, dynamic>;
+
+        final response = method == 'PUT'
+            ? await http.put(
+                Uri.parse(url),
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  'Authorization': 'Bearer $token',
+                },
+                body: jsonEncode(body),
+              ).timeout(const Duration(seconds: 10))
+            : await http.post(
+                Uri.parse(url),
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  'Authorization': 'Bearer $token',
+                },
+                body: jsonEncode(body),
+              ).timeout(const Duration(seconds: 10));
+
+        final raw = response.body.trim();
+        final data = raw.isEmpty ? <String, dynamic>{} : jsonDecode(raw);
+
+        if (response.statusCode == 200 || response.statusCode == 201 || response.statusCode == 204) {
+          return {'success': true, 'data': data, 'status': 'held'};
+        }
+
+        if (response.statusCode == 404) {
+          continue;
+        }
+
+        return {
+          'success': false,
+          'message': data is Map ? (data['message'] ?? 'Failed to record outcome') : 'Failed to record outcome',
+        };
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    return {
+      'success': false,
+      'message': lastError != null
+          ? 'Network error: ${lastError.toString()}'
+          : 'The appointment could not be marked as held on the server.',
+    };
   }
 }

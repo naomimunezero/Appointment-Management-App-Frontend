@@ -9,8 +9,13 @@ import '../utils/dashboard_utils.dart';
 /// instead of just leaving a gap.
 class NextAppointmentCard extends StatelessWidget {
   final Map<String, dynamic>? appointment;
+  final VoidCallback? onTap;
 
-  const NextAppointmentCard({super.key, required this.appointment});
+  const NextAppointmentCard({
+    super.key,
+    required this.appointment,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +29,7 @@ class NextAppointmentCard extends StatelessWidget {
         ? next['duration_minutes'] as int
         : int.tryParse('${next['duration_minutes'] ?? ''}') ?? 0;
 
-    return Container(
+    final card = Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(18)),
@@ -68,6 +73,13 @@ class NextAppointmentCard extends StatelessWidget {
           _CountdownRing(appointmentStart: start),
         ],
       ),
+    );
+
+    if (onTap == null) return card;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: card,
     );
   }
 

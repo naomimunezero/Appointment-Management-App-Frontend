@@ -1,8 +1,11 @@
+import 'package:appointment_app/services/attendee_history_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../widgets/bottom_nav_bar.dart';
+import '../widgets/field_label.dart';
+import '../utils/validators.dart';
 
 class NewAppointmentScreen extends StatefulWidget {
   const NewAppointmentScreen({super.key});
@@ -18,13 +21,23 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
   final _durationController = TextEditingController(text: '60');
   final _locationController = TextEditingController();
   final _reminderMinutesController = TextEditingController();
+  final _nameController = TextEditingController();
 
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
+  String _durationUnit = 'min';
   String _locationType = 'physical';
   String? _zoomLink;
+  String _reminderUnit = 'min'; 
 
-  List<String> _attendeeEmails = [];
+
+  int? _durationInMinutes() {
+    final raw = int.tryParse(_durationController.text);
+    if (raw == null) return null;
+    return _durationUnit == 'hr' ? raw * 60 : raw;
+  }
+
+  List<Map<String, String>> _attendees = [];
   List<Map<String, dynamic>> _reminders = [
     {'minutes_before': 300},
     {'minutes_before': 30},
@@ -43,6 +56,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
     _durationController.dispose();
     _locationController.dispose();
     _reminderMinutesController.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -104,7 +118,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
 
     final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate!);
     final timeStr = _formatTime(_selectedTime!);
-    final durationMinutes = int.tryParse(_durationController.text) ?? 60;
+    final durationMinutes = _durationInMinutes() ?? 60;
 
     final result = await ApiService.checkTimeConflict(dateStr, timeStr, durationMinutes);
 
@@ -131,21 +145,31 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
       return;
     }
 
-    final results = await ApiService.searchUsers(query);
+    final backendResults = await ApiService.searchUsers(query);
+    final historyResults = await AttendeeHistoryService.search(query);
+
+    final combined = [...backendResults];
+    for (final h in historyResults) {
+      final alreadyThere = combined.any((r) => r['email'] == h['email']);
+      if (!alreadyThere) combined.add(h);
+    }
+
     setState(() {
-      _searchResults = results;
+      _searchResults = combined;
       _showSearchResults = true;
     });
   }
 
-  void _addAttendeeEmail(String email) {
-    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-    if (emailRegex.hasMatch(email.trim()) && !_attendeeEmails.contains(email.trim())) {
+  void _addAttendeeEmail(String email, {String? name}) {
+    final trimmedEmail = email.trim();
+    if (isValidEmail(trimmedEmail) && !_attendees.any((a) => a['email'] == trimmedEmail)) {
+      final resolvedName = name?.trim().isNotEmpty == true ? name!.trim() : trimmedEmail.split('@').first;
       setState(() {
-        _attendeeEmails.add(email.trim());
+        _attendees.add({'name': resolvedName, 'email': trimmedEmail});
         _emailController.clear();
         _showSearchResults = false;
       });
+      AttendeeHistoryService.save(resolvedName, trimmedEmail);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a valid email address')),
@@ -154,45 +178,74 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
   }
 
   void _removeAttendeeEmail(String email) {
-    setState(() => _attendeeEmails.remove(email));
+    setState(() => _attendees.removeWhere((a) => a['email'] == email));
   }
 
   void _showAddReminderDialog() {
     _reminderMinutesController.clear();
+    _reminderUnit = 'min';
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Reminder'),
-        content: TextField(
-          controller: _reminderMinutesController,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            hintText: 'Enter minutes before appointment',
-            labelText: 'Minutes',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Add Reminder'),
+          content: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _reminderMinutesController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    hintText: 'e.g. 30',
+                    labelText: 'Remind me',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _reminderUnit,
+                  items: const [
+                    DropdownMenuItem(value: 'min', child: Text('min')),
+                    DropdownMenuItem(value: 'hr', child: Text('hr')),
+                    DropdownMenuItem(value: 'day', child: Text('day')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setDialogState(() => _reminderUnit = value);
+                  },
+                ),
+              ),
+            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final val = int.tryParse(_reminderMinutesController.text);
+                if (val != null && val > 0) {
+                  final multiplier = _reminderUnit == 'day'
+                      ? 1440
+                      : _reminderUnit == 'hr'
+                          ? 60
+                          : 1;
+                  setState(() {
+                    _reminders.add({'minutes_before': val * multiplier});
+                  });
+                  Navigator.pop(context);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter a valid number')),
+                  );
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              final mins = int.tryParse(_reminderMinutesController.text);
-              if (mins != null && mins > 0) {
-                setState(() {
-                  _reminders.add({'minutes_before': mins});
-                });
-                Navigator.pop(context);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter a valid number')),
-                );
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
       ),
     );
   }
@@ -218,7 +271,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
       return;
     }
     
-    final durationMinutes = int.tryParse(_durationController.text);
+    final durationMinutes = _durationInMinutes();
     if (durationMinutes == null || durationMinutes < 15) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Minimum duration is 15 minutes')),
@@ -257,7 +310,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
       date: dateStr,
       startTime: timeStr,
       durationMinutes: durationMinutes,
-      attendeeEmails: _attendeeEmails,
+      attendees: _attendees,
       locationType: _locationType,
       location: _locationType == 'physical' ? _locationController.text.trim() : null,
       zoomLink: _locationType == 'online' ? _zoomLink : null,
@@ -283,7 +336,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
   Widget build(BuildContext context) {
     final canSave = _selectedDate != null && 
                     _selectedTime != null && 
-                    (int.tryParse(_durationController.text) ?? 0) >= 15 && 
+                    (_durationInMinutes() ?? 0) >= 15 && 
                     _conflictError == null &&
                     _purposeController.text.isNotEmpty;
 
@@ -305,7 +358,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // PURPOSE / TITLE
-                const _FieldLabel('PURPOSE / TITLE'),
+                const FieldLabel('PURPOSE / TITLE', required:false),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _purposeController,
@@ -318,7 +371,14 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                 const SizedBox(height: 20),
 
                 // DATE AND DURATION ON SAME ROW
-                const _FieldLabel('DATE'),
+                Row(
+                  children: [
+                    const FieldLabel('DATE', required:false),
+                    const SizedBox(width: 30),
+                    const FieldLabel('DURATION', required:false),
+                  ],
+                ),
+                
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -338,29 +398,51 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _durationController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          hintText: '60',
-                          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-                          suffixText: 'min',
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _durationController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              hintText: '60',
+                              hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+                            ),
+                            onChanged: (_) => _checkForConflicts(),
+                            validator: (v) {
+                              final raw = int.tryParse(v ?? '');
+                              if (raw == null || raw <= 0) return 'Required';
+                              final totalMinutes = _durationUnit == 'hr' ? raw * 60 : raw;
+                              if (totalMinutes < 15) return 'Min 15 min';
+                              return null;
+                            },
+                          ),
                         ),
-                        onChanged: (_) => _checkForConflicts(),
-                        validator: (v) {
-                          final val = int.tryParse(v ?? '');
-                          if (val == null || val < 15) return 'Min 15';
-                          return null;
-                        },
-                      ),
+                        const SizedBox(width: 4),
+                        DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _durationUnit,
+                            items: const [
+                              DropdownMenuItem(value: 'min', child: Text('min', style: TextStyle(fontSize: 13))),
+                              DropdownMenuItem(value: 'hr', child: Text('hr', style: TextStyle(fontSize: 13))),
+                            ],
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setState(() => _durationUnit = value);
+                              _checkForConflicts();
+                            },
+                          ),
+                        ),
+                      ],
                     ),
+                  ),
                   ],
                 ),
                 const SizedBox(height: 20),
 
                 // START TIME
-                const _FieldLabel('START TIME'),
+                const FieldLabel('START TIME', required:false),
                 const SizedBox(height: 8),
                 TextFormField(
                   readOnly: true,
@@ -419,40 +501,64 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                 const SizedBox(height: 20),
 
                 // PERSON(S) TO MEET
-                const _FieldLabel('PERSON(S) TO MEET'),
+                // PERSON(S) TO MEET
+                const FieldLabel('PERSON(S) TO MEET', required: false),
                 const SizedBox(height: 8),
                 Stack(
                   children: [
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        TextFormField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: InputDecoration(
-                            hintText: 'ronald@nugsoft.com',
-                            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.orange),
-                              onPressed: () => _addAttendeeEmail(_emailController.text),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: TextFormField(
+                                controller: _nameController,
+                                decoration: InputDecoration(
+                                  hintText: 'Name',
+                                  hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+                                ),
+                              ),
                             ),
-                          ),
-                          onChanged: _searchUsers,
-                          onFieldSubmitted: _addAttendeeEmail,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 3,
+                              child: TextFormField(
+                                controller: _emailController,
+                                keyboardType: TextInputType.emailAddress,
+                                decoration: InputDecoration(
+                                  hintText: 'ronald@nugsoft.com',
+                                  hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.orange),
+                                    onPressed: () {
+                                      _addAttendeeEmail(_emailController.text, name: _nameController.text);
+                                      _nameController.clear();
+                                    },
+                                  ),
+                                ),
+                                onChanged: _searchUsers,
+                                onFieldSubmitted: (value) {
+                                  _addAttendeeEmail(value, name: _nameController.text);
+                                  _nameController.clear();
+                                },
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 8),
-                        if (_attendeeEmails.isNotEmpty)
+                        if (_attendees.isNotEmpty)
                           Wrap(
                             spacing: 8,
-                            children: _attendeeEmails.map((email) {
+                            runSpacing: 8,
+                            children: _attendees.map((a) {
                               return Chip(
-                                label: Text(
-                                  email,
-                                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                                ),
+                                label: Text(a['name'] ?? a['email'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 12)),
                                 backgroundColor: AppColors.navy,
                                 deleteIcon: const Icon(Icons.close, size: 16, color: Colors.white),
-                                onDeleted: () => _removeAttendeeEmail(email),
+                                onDeleted: () => _removeAttendeeEmail(a['email']!),
                               );
                             }).toList(),
                           ),
@@ -479,7 +585,8 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                                 title: Text(user['name'] ?? 'Unknown'),
                                 subtitle: Text(user['email']),
                                 onTap: () {
-                                  _addAttendeeEmail(user['email']);
+                                  _addAttendeeEmail(user['email'], name: user['name']);
+                                  _nameController.clear();
                                   setState(() => _showSearchResults = false);
                                 },
                               );
@@ -489,10 +596,11 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                       ),
                   ],
                 ),
+                                
                 const SizedBox(height: 20),
 
                 // LOCATION
-                const _FieldLabel('LOCATION'),
+                const FieldLabel('LOCATION', required:false),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -537,7 +645,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            'Online (Zoom)',
+                            'Virtual / Online',
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -554,7 +662,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                   TextFormField(
                     controller: _locationController,
                     decoration: InputDecoration(
-                      hintText: 'Nugsoft boardroom, Kyanja',
+                      hintText: 'E.g Nugsoft boardroom, Kyanja',
                       hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
                     ),
                     validator: (v) => _locationType == 'physical' && (v == null || v.trim().isEmpty)
@@ -564,7 +672,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                 if (_locationType == 'online')
                   TextFormField(
                     decoration: InputDecoration(
-                      hintText: 'Paste or enter Zoom link',
+                      hintText: 'Paste/enter the link to the meeting here',
                       hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
                     ),
                     onChanged: (value) => setState(() => _zoomLink = value),
@@ -575,7 +683,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                 const SizedBox(height: 20),
 
                 // REMIND ME
-                const _FieldLabel('REMIND ME'),
+                const FieldLabel('REMIND ME', required:false),
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
@@ -583,8 +691,12 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                     final reminder = _reminders[index];
                     final mins = reminder['minutes_before'] as int;
                     String label;
-                    if (mins >= 60) {
-                      label = '${mins ~/ 60} hr${mins ~/ 60 > 1 ? 's' : ''} before';
+                    if (mins % 1440 == 0 && mins >= 1440) {
+                      final days = mins ~/ 1440;
+                      label = '$days day${days > 1 ? 's' : ''} before';
+                    } else if (mins % 60 == 0 && mins >= 60) {
+                      final hrs = mins ~/ 60;
+                      label = '$hrs hr${hrs > 1 ? 's' : ''} before';
                     } else {
                       label = '$mins min before';
                     }
@@ -604,7 +716,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                     );
                   }),
                 ),
-                if (_reminders.length < 3)
+                if (_reminders.length < 10)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
                     child: GestureDetector(
@@ -662,20 +774,3 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
   }
 }
 
-class _FieldLabel extends StatelessWidget {
-  final String text;
-  const _FieldLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.6,
-        color: Colors.grey[700],
-      ),
-    );
-  }
-}

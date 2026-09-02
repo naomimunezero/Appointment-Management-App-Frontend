@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../widgets/bottom_nav_bar.dart';
-import '../widgets/diary_week_strip.dart';
 import '../widgets/diary_appointment_card.dart';
 import '../utils/diary_utils.dart';
 
@@ -21,7 +20,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
   // Appointments grouped by "yyyy-MM-dd" key.
   Map<String, List<Map<String, dynamic>>> _appointmentsByDate = {};
 
-  final Map<String, GlobalKey> _sectionKeys = {};
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -32,13 +30,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
     _loadWeek();
   }
 
-  List<DateTime> get _weekDays => List.generate(7, (i) => _weekStart.add(Duration(days: i)));
-
-  // IMPORTANT: this expects ApiService.getAppointments(from, to) to exist —
-  // see the note below the code for what to add to your ApiService.
-  // Expected response: a List of appointment maps, each with at least
-  // appointment_date ("2026-07-09"), start_time ("8:00 AM"), purpose,
-  // person_to_meet, location, duration_minutes, status.
   Future<void> _loadWeek() async {
     setState(() => _loading = true);
     try {
@@ -67,22 +58,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
     }
   }
 
-  void _onSelectDay(DateTime day) {
-    setState(() => _selectedDate = day);
-    final key = _sectionKeys[dateKey(day)];
-    if (key?.currentContext != null) {
-      Scrollable.ensureVisible(
-        key!.currentContext!,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final weekEnd = _weekStart.add(const Duration(days: 6));
-    final datesWithAppointments = _appointmentsByDate.keys.toSet();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -90,15 +68,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
         child: Column(
           children: [
             _buildHeader(weekEnd),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: DiaryWeekStrip(
-                weekDays: _weekDays,
-                selectedDate: _selectedDate,
-                datesWithAppointments: datesWithAppointments,
-                onSelect: _onSelectDay,
-              ),
-            ),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -144,29 +113,70 @@ class _DiaryScreenState extends State<DiaryScreen> {
                   style: const TextStyle(color: Colors.white70, fontSize: 13)),
             ],
           ),
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), shape: BoxShape.circle),
-            child: const Icon(Icons.tune, color: Colors.white, size: 20),
+          GestureDetector(
+            onTap: _showDatePicker,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), shape: BoxShape.circle),
+              child: const Icon(Icons.calendar_today, color: Colors.white, size: 20),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDayList() {
-    // Only show days that actually have appointments, in week order,
-    // starting from the top of the week — matches the "continuous
-    // agenda" feel of the design rather than 7 mostly-empty sections.
-    final daysWithData = _weekDays.where((d) => _appointmentsByDate.containsKey(dateKey(d))).toList();
+  Future<void> _showDatePicker() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppColors.navy,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: AppColors.navy,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
 
-    if (daysWithData.isEmpty) {
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+        _weekStart = startOfWeek(picked);
+      });
+      _loadWeek();
+    }
+  }
+
+  Widget _buildDayList() {
+    // Show only appointments for the selected date
+    final dateKey = _dateKey(_selectedDate);
+    final appointments = _appointmentsByDate[dateKey] ?? [];
+
+    if (appointments.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        children: const [
+        children: [
           SizedBox(height: 80),
           Center(
-            child: Text('No appointments this week', style: TextStyle(color: Colors.grey)),
+            child: Column(
+              children: [
+                Icon(Icons.calendar_today, size: 48, color: Colors.grey[300]),
+                const SizedBox(height: 16),
+                Text(
+                  'No appointments on ${_formatDateForDisplay(_selectedDate)}',
+                  style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                ),
+              ],
+            ),
           ),
         ],
       );
@@ -176,13 +186,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
-      children: daysWithData.map((day) {
-        final key = dateKey(day);
-        _sectionKeys.putIfAbsent(key, () => GlobalKey());
-        final appointments = _appointmentsByDate[key]!;
-
-        return Container(
-          key: _sectionKeys[key],
+      children: [
+        Container(
           margin: const EdgeInsets.only(bottom: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -190,7 +195,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 12, bottom: 10),
                 child: Text(
-                  formatDayHeader(day),
+                  formatDayHeader(_selectedDate),
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
@@ -202,14 +207,29 @@ class _DiaryScreenState extends State<DiaryScreen> {
               ...appointments.map((a) => DiaryAppointmentCard(
                     appointment: a,
                     onTap: () {
-                      // TODO: wire this once the Appointment Detail screen
-                      // is built — Navigator.pushNamed(context, '/appointment', arguments: a['id']);
+                      final appointmentId = a['id'] as int?;
+                      if (appointmentId != null) {
+                        Navigator.pushNamed(
+                          context,
+                          '/appointment-details',
+                          arguments: {'appointmentId': appointmentId},
+                        );
+                      }
                     },
                   )),
             ],
           ),
-        );
-      }).toList(),
+        ),
+      ],
     );
+  }
+
+  String _dateKey(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _formatDateForDisplay(DateTime date) {
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 }

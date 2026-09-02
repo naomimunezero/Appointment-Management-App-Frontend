@@ -84,7 +84,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
               decoration: const BoxDecoration(
                 color: AppColors.navy,
-                borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+                //borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
               ),
               child: const Align(
                 alignment: Alignment.centerLeft,
@@ -141,12 +141,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ),
       ),
       bottomNavigationBar: AppBottomNav(
-        currentIndex: 3,
+        currentIndex: 2,
         onTap: (index) {
           if (index == 0) Navigator.pushNamed(context, '/dashboard');
           if (index == 1) Navigator.pushNamed(context, '/diary');
-          if (index == 2) Navigator.pushNamed(context, '/reports');
-          if (index == 3) return;
+          if (index == 2) return;
+          if (index == 3) Navigator.pushNamed(context, '/settings');
         },
         onAddTap: () => Navigator.pushNamed(context, '/new-appointment'),
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../utils/diary_utils.dart';
+import '../utils/status_utils.dart';
 
 /// A single appointment row in the diary list — time on the left,
 /// a colored accent bar, then title/subtitle, with a status pill

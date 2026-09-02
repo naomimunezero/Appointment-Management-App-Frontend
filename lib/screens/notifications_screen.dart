@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
+import '../models/appointment.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
