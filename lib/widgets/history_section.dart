@@ -31,12 +31,19 @@ class HistorySection extends StatelessWidget {
     final yesterday = today.subtract(const Duration(days: 1));
     final dateOnly = DateTime(dateTime.year, dateTime.month, dateTime.day);
 
+    // Format time as 12-hour format with AM/PM
+    final hour = dateTime.hour;
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+    final timeStr = '$displayHour:$minute $period';
+
     if (dateOnly == today) {
-      return '${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')} today';
+      return timeStr;
     } else if (dateOnly == yesterday) {
-      return 'Yesterday';
+      return 'Yesterday at $timeStr';
     } else {
-      return '${dateTime.day} ${_monthName(dateTime.month)}';
+      return '${dateTime.day} ${_monthName(dateTime.month)} at $timeStr';
     }
   }
 

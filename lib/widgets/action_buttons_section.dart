@@ -3,13 +3,15 @@ import '../theme/app_theme.dart';
 
 class ActionButtonsSection extends StatelessWidget {
   final VoidCallback onRecordOutcome;
-  final VoidCallback onMissedReschedule;
+  final VoidCallback onEdit;
+  final VoidCallback onReschedule;
   final bool isLoading;
 
   const ActionButtonsSection({
     super.key,
     required this.onRecordOutcome,
-    required this.onMissedReschedule,
+    required this.onEdit,
+    required this.onReschedule,
     this.isLoading = false,
   });
 
@@ -44,23 +46,38 @@ class ActionButtonsSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: isLoading ? null : onMissedReschedule,
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: AppColors.navy, width: 1.5),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: isLoading ? null : onEdit,
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppColors.navy, width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('Edit'),
+                ),
               ),
-            ),
-            child: const Text(
-              'Missed — reschedule',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: AppColors.navy,
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: isLoading ? null : onReschedule,
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppColors.navy, width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.event_repeat_outlined, size: 18),
+                  label: const Text('Reschedule'),
+                ),
               ),
-            ),
+            ],
           ),
         ],
       ),

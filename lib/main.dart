@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'theme/app_theme.dart';
 import 'screens/sign_in_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -15,8 +16,15 @@ import 'screens/reports_screen.dart';
 import 'screens/appointment_details_screen.dart';
 import 'screens/record_outcome_screen.dart';
 import 'screens/action_points_tracker_screen.dart';
+import 'services/notification_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.init();
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: AppColors.navy,
+    statusBarIconBrightness: Brightness.light,
+  ));
   runApp(const AppointmentApp());
 }
 
@@ -48,6 +56,13 @@ class AppointmentApp extends StatelessWidget {
               builder: (context) => RecordOutcomeScreen(appointmentId: appointmentId),
             );
           }
+        }
+        if (settings.name == '/new-appointment') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          final editAppointmentId = args?['editAppointmentId'] as int?;
+          return MaterialPageRoute(
+            builder: (context) => NewAppointmentScreen(editAppointmentId: editAppointmentId),
+          );
         }
         return null;
       },

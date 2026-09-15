@@ -1,7 +1,7 @@
+import 'package:intl/intl.dart';
 /// Date and time formatting utilities for the appointment app.
 class DateTimeUtils {
-  /// Formats an ISO 8601 date string to a readable format like "Sep 2, 2026"
-  /// If the input is already a simple date format, it returns it as is.
+
   static String formatDate(String? dateStr) {
     if (dateStr == null || dateStr.isEmpty) return '';
     
@@ -69,5 +69,42 @@ class DateTimeUtils {
     if (date.isEmpty) return time;
     if (time.isEmpty) return date;
     return '$date · $time';
+  }
+
+  /// Returns a live countdown like "In 30 mins" or "Overdue by 2 hrs"
+  static String relativeCountdown(DateTime target) {
+    final diff = target.difference(DateTime.now());
+    final isPast = diff.isNegative;
+    final abs = diff.abs();
+
+    String unitText;
+    if (abs.inDays >= 1) {
+      unitText = '${abs.inDays} day${abs.inDays > 1 ? 's' : ''}';
+    } else if (abs.inHours >= 1) {
+      unitText = '${abs.inHours} hr${abs.inHours > 1 ? 's' : ''}';
+    } else {
+      unitText = '${abs.inMinutes} min${abs.inMinutes != 1 ? 's' : ''}';
+    }
+
+    return isPast ? 'Overdue by $unitText' : 'In $unitText';
+  }
+
+  static String friendlyMeetingDate(String? dateStr, String? timeStr) {
+    if (dateStr == null) return '';
+    try {
+      final date = DateTime.parse(dateStr);
+      final dayLabel = DateFormat('d MMM yyyy').format(date);
+      if (timeStr == null || timeStr.isEmpty) return dayLabel;
+
+      final parts = timeStr.split(':');
+      final hour = int.tryParse(parts[0]) ?? 0;
+      final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+      final combined = DateTime(date.year, date.month, date.day, hour, minute);
+      final timeLabel = DateFormat('h:mm a').format(combined);
+
+      return '$dayLabel at $timeLabel';
+    } catch (_) {
+      return dateStr;
+    }
   }
 }

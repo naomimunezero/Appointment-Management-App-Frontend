@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/report_summary.dart';
@@ -6,7 +7,23 @@ import '../models/app_user.dart';
 import '../models/appointment.dart';
 
 class ApiService {
+
+  // static const String baseUrl = 'http://192.168.1.109:8000/api';
   static const String baseUrl = 'http://127.0.0.1:8000/api';
+
+  static Future<bool> testConnection() async {
+    try {
+      print('TESTING CONNECTION TO: $baseUrl');
+      final response = await http.get(
+        Uri.parse('$baseUrl/health'), // You might need to add a health endpoint to your backend
+      ).timeout(const Duration(seconds: 5));
+      print('CONNECTION TEST STATUS: ${response.statusCode}');
+      return response.statusCode == 200;
+    } catch (e) {
+      print('CONNECTION TEST FAILED: $e');
+      return false;
+    }
+  }
 
   static Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -39,11 +56,17 @@ class ApiService {
 
   static Future<Map<String, dynamic>> register(String name, String email, String password) async {
     try {
+      print('REGISTER ATTEMPT - URL: $baseUrl/register');
+      print('REGISTER ATTEMPT - Email: $email, Name: $name');
+
       final response = await http.post(
         Uri.parse('$baseUrl/register'),
         headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
         body: jsonEncode({'name': name, 'email': email, 'password': password}),
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 15));
+
+      print('REGISTER RESPONSE - Status: ${response.statusCode}');
+      print('REGISTER RESPONSE - Body: ${response.body}');
 
       final data = jsonDecode(response.body);
 
@@ -54,17 +77,25 @@ class ApiService {
       }
       return {'success': false, 'message': data['message'] ?? 'Registration failed'};
     } catch (e) {
+      print('REGISTER ERROR: $e');
+      print('REGISTER ERROR TYPE: ${e.runtimeType}');
       return {'success': false, 'message': 'Network error: ${e.toString()}'};
     }
   }
 
   static Future<Map<String, dynamic>> login(String email, String password) async {
     try {
+      print('LOGIN ATTEMPT - URL: $baseUrl/login');
+      print('LOGIN ATTEMPT - Email: $email');
+
       final response = await http.post(
         Uri.parse('$baseUrl/login'),
         headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 15));
+
+      print('LOGIN RESPONSE - Status: ${response.statusCode}');
+      print('LOGIN RESPONSE - Body: ${response.body}');
 
       final data = jsonDecode(response.body);
 
@@ -79,6 +110,8 @@ class ApiService {
       }
       return {'success': false, 'message': data['message'] ?? 'Login failed'};
     } catch (e) {
+      print('LOGIN ERROR: $e');
+      print('LOGIN ERROR TYPE: ${e.runtimeType}');
       return {'success': false, 'message': 'Network error: ${e.toString()}'};
     }
   }
@@ -136,12 +169,31 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getNotifications() async {
-    final token = await _getToken();
-    final response = await http.get(
-      Uri.parse('$baseUrl/notifications'),
-      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
-    );
-    return jsonDecode(response.body);
+    try {
+      final token = await _getToken();
+      print('GET NOTIFICATIONS - Token exists: ${token != null && token.isNotEmpty}');
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/notifications'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      );
+
+      print('NOTIFICATIONS STATUS: ${response.statusCode}');
+      print('NOTIFICATIONS BODY: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        print('DECODED NOTIFICATIONS TYPE: ${decoded.runtimeType}');
+        print('DECODED NOTIFICATIONS: $decoded');
+        return decoded;
+      }
+
+      print('NON-200 STATUS CODE: ${response.statusCode}');
+      return [];
+    } catch (e) {
+      print('NOTIFICATIONS ERROR: $e');
+      return [];
+    }
   }
 
   // NEW: powers the activity chart / time filter pills on the dashboard.
@@ -268,7 +320,7 @@ class ApiService {
     required List<Map<String, String>> attendees,
     required String locationType, // 'physical' or 'online'
     String? location,
-    String? zoomLink,
+    String? onlineLink,
     required List<Map<String, dynamic>> reminders,
   }) async {
     try {
@@ -288,7 +340,7 @@ class ApiService {
           'attendees': attendees,
           'location_type': locationType,
           'location': location,
-          'zoom_link': zoomLink,
+          'online_link': onlineLink,
           'reminders': reminders,
         }),
       ).timeout(const Duration(seconds: 10));
@@ -299,6 +351,42 @@ class ApiService {
         return {'success': true, 'appointment': data};
       }
       return {'success': false, 'message': data['message'] ?? 'Failed to create appointment'};
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateAppointment({
+    required int appointmentId,
+    required String purpose,
+    required String date,
+    required String startTime,
+    required int durationMinutes,
+    required String location,
+  }) async {
+    try {
+      final token = await _getToken();
+      final response = await http.put(
+        Uri.parse('$baseUrl/appointments/$appointmentId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'purpose': purpose,
+          'appointment_date': date,
+          'start_time': startTime,
+          'duration_minutes': durationMinutes,
+          'location': location,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {'success': true, 'appointment': data};
+      }
+      return {'success': false, 'message': data['message'] ?? 'Failed to update appointment'};
     } catch (e) {
       return {'success': false, 'message': 'Network error: ${e.toString()}'};
     }
@@ -385,6 +473,16 @@ class ApiService {
     } catch (e) {
       return {'success': false, 'message': 'Network error: ${e.toString()}'};
     }
+  }
+
+  static Future<List<dynamic>> getAppointmentHistory(int id) async {
+    final token = await _getToken();
+    final response = await http.get(
+      Uri.parse('$baseUrl/appointments/$id/history'),
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+    );
+    if (response.statusCode == 200) return jsonDecode(response.body);
+    return [];
   }
 
   // NEW: Decline appointment invitation
