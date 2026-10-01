@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 import '../models/appointment.dart';
 import '../services/api_service.dart';
 import '../utils/date_time_utils.dart';
+//import '../models/action_point.dart';
 
 class RecordOutcomeScreen extends StatefulWidget {
   final int appointmentId;
@@ -18,23 +19,29 @@ class RecordOutcomeScreen extends StatefulWidget {
 }
 
 class ActionPointData {
+  int id;
   String description;
   String? owner;
   DateTime? dueDate;
+  bool isCompleted;
 
   ActionPointData({
+    required this.id,
     required this.description,
     this.owner,
     this.dueDate,
+    this.isCompleted = false,
   });
 }
 
 class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
   late Future<Appointment> _appointmentFuture;
   final _discussionController = TextEditingController();
-  late List<String> _attendees = [];
+  late List<Map<String, String>> _attendees = [];
   final List<ActionPointData> _actionPoints = [];
   bool _isSubmitting = false;
+  bool _permissionChecked = false;
+  bool _canRecordOutcomes = false;
 
   @override
   void initState() {
@@ -44,6 +51,15 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
       statusBarIconBrightness: Brightness.light,
     ));
     _appointmentFuture = ApiService.getAppointmentDetails(widget.appointmentId);
+    _loadPermission();
+  }
+
+  Future<void> _loadPermission() async {
+    final allowed = await ApiService.hasPermission('record_outcomes');
+    if (mounted) setState(() {
+      _canRecordOutcomes = allowed;
+      _permissionChecked = true;
+    });
   }
 
   @override
@@ -73,9 +89,23 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
             TextButton(
               onPressed: () {
                 if (controller.text.trim().isNotEmpty) {
-                  setState(() {
-                    _attendees.add(controller.text.trim());
-                  });
+                  final input = controller.text.trim();
+                  // Check if it's an email
+                  if (input.contains('@')) {
+                    setState(() {
+                      _attendees.add({
+                        'name': input.split('@').first,
+                        'email': input,
+                      });
+                    });
+                  } else {
+                    setState(() {
+                      _attendees.add({
+                        'name': input,
+                        'email': '',
+                      });
+                    });
+                  }
                   Navigator.pop(context);
                 }
               },
@@ -93,7 +123,7 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
     });
   }
 
-  void _addActionPoint() {
+  void _addActionPoint({int? editIndex}) {
     showDialog(
       context: context,
       builder: (context) {
@@ -101,10 +131,17 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
         String? selectedOwner;
         DateTime? selectedDate;
 
+        // Pre-fill if editing
+        if (editIndex != null) {
+          descController.text = _actionPoints[editIndex].description;
+          selectedOwner = _actionPoints[editIndex].owner;
+          selectedDate = _actionPoints[editIndex].dueDate;
+        }
+
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title: const Text('Add action point'),
+              title: Text(editIndex != null ? 'Edit action point' : 'Add action point'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -119,15 +156,16 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
                       maxLines: 2,
                     ),
                     const SizedBox(height: 16),
-                    const Text('Owner'),
+                    const Text('By'),
                     DropdownButton<String>(
                       isExpanded: true,
                       value: selectedOwner,
-                      hint: const Text('Select owner'),
+                      hint: const Text('Select person'),
                       items: _attendees
+                          .where((attendee) => attendee['email'] != null && attendee['email']!.isNotEmpty)
                           .map((attendee) => DropdownMenuItem(
-                                value: attendee,
-                                child: Text(attendee),
+                                value: attendee['email'],
+                                child: Text(attendee['name'] ?? attendee['email']!),
                               ))
                           .toList(),
                       onChanged: (value) {
@@ -140,7 +178,7 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
                       onPressed: () async {
                         final date = await showDatePicker(
                           context: context,
-                          initialDate: DateTime.now(),
+                          initialDate: selectedDate ?? DateTime.now(),
                           firstDate: DateTime.now(),
                           lastDate: DateTime.now().add(const Duration(days: 365)),
                         );
@@ -166,20 +204,30 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
                 TextButton(
                   onPressed: () {
                     if (descController.text.trim().isNotEmpty) {
-                      setState(() {
-                        _actionPoints.add(
-                          ActionPointData(
+                      this.setState(() {
+                        if (editIndex != null) {
+                          _actionPoints[editIndex] = ActionPointData(
+                            id: _actionPoints[editIndex].id,
                             description: descController.text.trim(),
                             owner: selectedOwner,
                             dueDate: selectedDate,
-                          ),
-                        );
+                            isCompleted: _actionPoints[editIndex].isCompleted,
+                          );
+                        } else {
+                          _actionPoints.add(
+                            ActionPointData(
+                              id: DateTime.now().millisecondsSinceEpoch,
+                              description: descController.text.trim(),
+                              owner: selectedOwner,
+                              dueDate: selectedDate,
+                            ),
+                          );
+                        }
                       });
                       Navigator.pop(context);
-                      this.setState(() {});
                     }
                   },
-                  child: const Text('Add'),
+                  child: Text(editIndex != null ? 'Save' : 'Add'),
                 ),
               ],
             );
@@ -190,13 +238,41 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
   }
 
   void _removeActionPoint(int index) {
-    setState(() {
-      _actionPoints.removeAt(index);
-    });
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Action Point'),
+        content: const Text('Are you sure you want to delete this action point?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _actionPoints.removeAt(index);
+              });
+              Navigator.pop(context);
+            },
+            style: TextButton.styleFrom(foregroundColor: AppColors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _submitOutcome() async {
     setState(() => _isSubmitting = true);
+    
+    // Debug: Print what's being sent
+    print('RECORD OUTCOME - Attendees being sent:');
+    print('  Count: ${_attendees.length}');
+    for (var attendee in _attendees) {
+      print('  Attendee: $attendee');
+    }
+    
     try {
       final result = await ApiService.recordAppointmentOutcome(
         widget.appointmentId,
@@ -206,7 +282,7 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
                   'description': ap.description,
                   'responsible_person': ap.owner,
                   'due_date': ap.dueDate?.toIso8601String().substring(0, 10),
-                  'status': 'pending',
+                  'status': ap.isCompleted ? 'done' : 'pending',
                 })
             .toList(),
         attendees: _attendees,
@@ -215,29 +291,17 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
       if (!mounted) return;
 
       if (result['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Appointment marked as Held'),
-            backgroundColor: AppColors.green,
-          ),
-        );
+        final now = DateTimeUtils.nowInUganda();
+        final formattedDate = DateTimeUtils.formatDateFromDateTime(now);
+        final formattedTime = DateTimeUtils.formatTimeFromDateTime(now);
+        AppTheme.showTopSnackBar(context, 'Appointment marked as Held on $formattedDate at $formattedTime');
         Navigator.pop(context, true);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message'] ?? 'Failed to record outcome'),
-            backgroundColor: AppColors.red,
-          ),
-        );
+        AppTheme.showTopSnackBar(context, result['message'] ?? 'Failed to record outcome');
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          backgroundColor: AppColors.red,
-        ),
-      );
+      AppTheme.showTopSnackBar(context, 'Error: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -245,6 +309,15 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_permissionChecked) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (!_canRecordOutcomes) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Record Outcome')),
+        body: const Center(child: Text('You do not have permission to record outcomes.')),
+      );
+    }
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -302,7 +375,7 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
 
           // Initialize attendees from appointment on first build
           if (_attendees.isEmpty) {
-            _attendees = List.from(appointment.attendees);
+            _attendees = appointment.attendeeDetails;
           }
 
           return SingleChildScrollView(
@@ -410,7 +483,7 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    _attendees[index],
+                                    _attendees[index]['name'] ?? _attendees[index]['email'] ?? 'Unknown',
                                     style: const TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
@@ -437,13 +510,18 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
                 const SizedBox(height: 24),
 
                 // WHAT WAS DISCUSSED
-                Text(
-                  'WHAT WAS DISCUSSED',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                    color: Colors.grey[600],
+                RichText(
+                  text: TextSpan(
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                      color: Colors.grey[600],
+                    ),
+                    children: const [
+                      TextSpan(text: 'WHAT WAS DISCUSSED'),
+                      TextSpan(text: ' *', style: TextStyle(color: AppColors.red)),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -535,39 +613,36 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
                                         children: [
                                           Text(
                                             ap.description,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 13,
                                               fontWeight: FontWeight.w600,
                                               color: AppColors.navy,
                                             ),
                                           ),
                                           const SizedBox(height: 4),
-                                          if (ap.owner != null)
-                                            Text(
-                                              'Owner: ${ap.owner}',
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                color: Color(0xFF888888),
-                                              ),
+                                          Text(
+                                            'By ${ap.owner?.isNotEmpty == true ? ap.owner : 'unassigned'} • ${ap.dueDate != null ? 'Due ${DateTimeUtils.formatDateFromDateTime(ap.dueDate!)}' : 'No due date'}',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Color(0xFF888888),
                                             ),
-                                          if (ap.dueDate != null)
-                                            Text(
-                                              'Due: ${DateTimeUtils.formatDateFromDateTime(ap.dueDate!)}',
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                color: Color(0xFF888888),
-                                              ),
-                                            ),
+                                          ),
                                         ],
                                       ),
                                     ),
-                                    GestureDetector(
-                                      onTap: () => _removeActionPoint(index),
-                                      child: const Icon(
-                                        Icons.close_rounded,
-                                        size: 18,
-                                        color: Color(0xFFCCCCCC),
-                                      ),
+                                    IconButton(
+                                      onPressed: () => _addActionPoint(editIndex: index),
+                                      icon: const Icon(Icons.edit, size: 16, color: Color(0xFFAAAAAA)),
+                                      tooltip: 'Edit action point',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                    ),
+                                    IconButton(
+                                      onPressed: () => _removeActionPoint(index),
+                                      icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFFCCCCCC)),
+                                      tooltip: 'Remove action point',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                                     ),
                                   ],
                                 ),

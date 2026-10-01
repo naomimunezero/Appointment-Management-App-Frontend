@@ -2,6 +2,7 @@
 const Map<String, String> _permissionLabels = {
   'manage_appointments': 'Manage appointments',
   'record_outcomes': 'Record outcomes',
+  'manage_action_points': 'Manage action points',
   'export_reports': 'Export reports',
 };
 
@@ -16,5 +17,6 @@ String permissionLabel(String permission) {
 const List<String> availablePermissions = [
   'manage_appointments',
   'record_outcomes',
+  'manage_action_points',
   'export_reports',
 ];

@@ -11,6 +11,7 @@ import 'screens/forgot_password_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/invite_assistant_screen.dart';
 import 'screens/pending_invite_screen.dart';
+import 'screens/assistant_details_screen.dart';
 import 'screens/new_appointment_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/appointment_details_screen.dart';
@@ -37,6 +38,9 @@ class AppointmentApp extends StatelessWidget {
       title: 'Appointment Manager',
       theme: AppTheme.light(),
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => AppSnackBarHost(
+        child: child ?? const SizedBox.shrink(),
+      ),
       initialRoute: '/',
       onGenerateRoute: (settings) {
         if (settings.name == '/appointment-details') {
@@ -77,7 +81,7 @@ class AppointmentApp extends StatelessWidget {
         '/settings': (context) => const SettingsScreen(),
         '/invite-assistant': (context) => const InviteAssistantScreen(),
         '/pending-invite': (context) => const PendingInviteScreen(),
-        '/new-appointment': (context) => const NewAppointmentScreen(),
+        '/assistant-details': (context) => const AssistantDetailsScreen(),
         '/reports': (context) => const ReportsScreen(),
         '/action-points': (context) => const ActionPointsTrackerScreen(),
       },

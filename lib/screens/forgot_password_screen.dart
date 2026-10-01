@@ -114,9 +114,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     if (result['success'] != true) {
       setState(() => _error = result['message']);
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Code resent')),
-      );
+      AppTheme.showTopSnackBar(context, 'Code resent', appBarHeight: 0);
     }
   }
 

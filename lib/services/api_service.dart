@@ -1,5 +1,5 @@
+import 'dart:io';
 import 'dart:convert';
-
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/report_summary.dart';
@@ -8,22 +8,7 @@ import '../models/appointment.dart';
 
 class ApiService {
 
-  // static const String baseUrl = 'http://192.168.1.109:8000/api';
   static const String baseUrl = 'http://127.0.0.1:8000/api';
-
-  static Future<bool> testConnection() async {
-    try {
-      print('TESTING CONNECTION TO: $baseUrl');
-      final response = await http.get(
-        Uri.parse('$baseUrl/health'), // You might need to add a health endpoint to your backend
-      ).timeout(const Duration(seconds: 5));
-      print('CONNECTION TEST STATUS: ${response.statusCode}');
-      return response.statusCode == 200;
-    } catch (e) {
-      print('CONNECTION TEST FAILED: $e');
-      return false;
-    }
-  }
 
   static Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -42,6 +27,28 @@ class ApiService {
     await prefs.setString('user_name', name);
   }
 
+  static Future<void> _saveUserPermissions(dynamic user) async {
+    if (user is! Map) return;
+    final prefs = await SharedPreferences.getInstance();
+    final role = user['role'];
+    await prefs.setStringList(
+      'user_permissions',
+      user['permissions'] is List
+          ? (user['permissions'] as List).map((value) => value.toString()).toList()
+          : <String>[],
+    );
+    await prefs.setBool(
+      'user_is_owner',
+      role is Map && role['name']?.toString().toLowerCase() == 'owner',
+    );
+  }
+
+  static Future<bool> hasPermission(String permission) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('user_is_owner') == true ||
+        (prefs.getStringList('user_permissions') ?? const <String>[]).contains(permission);
+  }
+
   // NEW: dashboard calls this to display the greeting.
   static Future<String?> getUserName() async {
     final prefs = await SharedPreferences.getInstance();
@@ -52,6 +59,8 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
     await prefs.remove('user_name'); // NEW: clear name on logout too
+    await prefs.remove('user_permissions');
+    await prefs.remove('user_is_owner');
   }
 
   static Future<Map<String, dynamic>> register(String name, String email, String password) async {
@@ -73,6 +82,7 @@ class ApiService {
       if (response.statusCode == 200 || response.statusCode == 201) {
         await _saveToken(data['token']);
         await _saveUserName(data['user']?['name']); // NEW
+        await _saveUserPermissions(data['user']);
         return {'success': true, 'user': AppUser.fromJson(data['user'])};
       }
       return {'success': false, 'message': data['message'] ?? 'Registration failed'};
@@ -102,6 +112,7 @@ class ApiService {
       if (response.statusCode == 200) {
         await _saveToken(data['token']);
         await _saveUserName(data['user']?['name']);
+        await _saveUserPermissions(data['user']);
         return {
           'success': true,
           'user': AppUser.fromJson(data['user']),
@@ -136,6 +147,58 @@ class ApiService {
       return {'success': false, 'message': data['message'] ?? 'Unable to send invitation'};
     } catch (e) {
       return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  /// Returns the current owner's assistant invitation or assistant record.
+  static Future<Map<String, dynamic>> getAssistantAccess() async {
+    try {
+      final token = await _getToken();
+      final response = await http.get(
+        Uri.parse('$baseUrl/assistant-invites'),
+        headers: {'Accept': 'application/json', 'Authorization': 'Bearer $token'},
+      ).timeout(const Duration(seconds: 10));
+      final decoded = jsonDecode(response.body);
+      if (response.statusCode != 200) {
+        return {'success': false, 'message': 'Unable to load assistant details.'};
+      }
+      final data = decoded is Map ? Map<String, dynamic>.from(decoded) : <String, dynamic>{};
+      dynamic assistant = data['assistant'] ?? data['invite'];
+      final invites = decoded is List ? decoded : (data['invites'] ?? data['data']);
+      if (assistant == null && data['data'] is Map) assistant = data['data'];
+      if (assistant == null && invites is List) {
+        final records = invites.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList();
+        records.sort((a, b) =>
+            (int.tryParse(b['id']?.toString() ?? '') ?? 0)
+                .compareTo(int.tryParse(a['id']?.toString() ?? '') ?? 0));
+        if (records.isNotEmpty) assistant = records.first;
+      }
+      if (assistant is Map) assistant = Map<String, dynamic>.from(assistant);
+      return {'success': true, 'assistant': assistant};
+    } catch (e) {
+      return {'success': false, 'message': 'Unable to load assistant details: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateAssistantPermissions(int inviteId, List<String> permissions) async {
+    try {
+      final token = await _getToken();
+      final response = await http.patch(
+        Uri.parse('$baseUrl/assistant-invites/$inviteId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'permissions': permissions}),
+      ).timeout(const Duration(seconds: 10));
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {'success': true, if (data is Map) ...Map<String, dynamic>.from(data)};
+      }
+      return {'success': false, 'message': data is Map ? data['message'] ?? 'Unable to update permissions.' : 'Unable to update permissions.'};
+    } catch (e) {
+      return {'success': false, 'message': 'Unable to update permissions: $e'};
     }
   }
 
@@ -358,14 +421,34 @@ class ApiService {
 
   static Future<Map<String, dynamic>> updateAppointment({
     required int appointmentId,
+    required String auditAction,
     required String purpose,
     required String date,
     required String startTime,
     required int durationMinutes,
     required String location,
+    String? locationType,
+    String? onlineLink,
+    required List<Map<String, String>> attendees,
+    required List<Map<String, dynamic>> reminders,
   }) async {
     try {
       final token = await _getToken();
+
+      // Debug: Print request data
+      print('UPDATE APPOINTMENT - Request data:');
+      print('  Appointment ID: $appointmentId');
+      print('  Purpose: $purpose');
+      print('  Date: $date');
+      print('  Start Time: $startTime');
+      print('  Duration: $durationMinutes');
+      print('  Location: $location');
+      print('  Location Type: $locationType');
+      print('  Online Link: $onlineLink');
+      print('  Attendees count: ${attendees.length}');
+      print('  Reminders count: ${reminders.length}');
+      print('  Reminders: $reminders');
+
       final response = await http.put(
         Uri.parse('$baseUrl/appointments/$appointmentId'),
         headers: {
@@ -379,17 +462,45 @@ class ApiService {
           'start_time': startTime,
           'duration_minutes': durationMinutes,
           'location': location,
+          'location_type': locationType,
+          'online_link': onlineLink,
+          'attendees': attendees,
+          'reminders': reminders,
+          'audit_action': auditAction,
         }),
       ).timeout(const Duration(seconds: 10));
+
+      print('UPDATE APPOINTMENT - Response status: ${response.statusCode}');
+      print('UPDATE APPOINTMENT - Response body: ${response.body}');
 
       final data = jsonDecode(response.body);
       if (response.statusCode == 200) {
         return {'success': true, 'appointment': data};
       }
-      return {'success': false, 'message': data['message'] ?? 'Failed to update appointment'};
+      return {
+        'success': false,
+        'message': _apiErrorMessage(data, 'Failed to update appointment'),
+      };
     } catch (e) {
+      print('UPDATE APPOINTMENT - Error: $e');
       return {'success': false, 'message': 'Network error: ${e.toString()}'};
     }
+  }
+
+  static String _apiErrorMessage(dynamic data, String fallback) {
+    if (data is! Map) return fallback;
+
+    final errors = data['errors'];
+    if (errors is Map) {
+      for (final value in errors.values) {
+        if (value is List && value.isNotEmpty) return value.first.toString();
+        if (value != null && value.toString().isNotEmpty) return value.toString();
+      }
+    }
+
+    final message = data['message'];
+    if (message is String && message.trim().isNotEmpty) return message;
+    return fallback;
   }
 
   // NEW: Check for time conflicts
@@ -544,9 +655,16 @@ class ApiService {
   static Future<Map<String, dynamic>> recordAppointmentOutcome(int appointmentId, {
     String? discussionNotes,
     List<Map<String, dynamic>>? actionPoints,
-    List<String>? attendees,
+    List<Map<String, String>>? attendees,
   }) async {
     final token = await _getToken();
+    
+    // Debug: Print what's being sent
+    print('API - RECORD OUTCOME:');
+    print('  Appointment ID: $appointmentId');
+    print('  Attendees: $attendees');
+    print('  Attendees count: ${attendees?.length ?? 0}');
+    
     final payload = {
       'discussion_notes': discussionNotes,
       'action_points': actionPoints,
@@ -635,5 +753,93 @@ class ApiService {
           ? 'Network error: ${lastError.toString()}'
           : 'The appointment could not be marked as held on the server.',
     };
+  }
+
+  // Update action point completion status
+  static Future<Map<String, dynamic>> updateActionPointStatus(int actionPointId, bool completed) async {
+    try {
+      final token = await _getToken();
+      final response = await http.put(
+        Uri.parse('$baseUrl/action-points/$actionPointId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'status': completed ? 'done' : 'pending'}),
+      ).timeout(const Duration(seconds: 10));
+
+      final rawBody = response.body.trim();
+      final data = rawBody.isEmpty ? <String, dynamic>{} : jsonDecode(rawBody);
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        return {'success': true, 'data': data};
+      }
+      return {
+        'success': false,
+        'message': data is Map ? (data['message'] ?? 'Failed to update action point') : 'Failed to update action point',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  // Delete action point
+  static Future<Map<String, dynamic>> deleteActionPoint(int actionPointId) async {
+    try {
+      final token = await _getToken();
+      final response = await http.delete(
+        Uri.parse('$baseUrl/action-points/$actionPointId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      final rawBody = response.body.trim();
+      final data = rawBody.isEmpty ? <String, dynamic>{} : jsonDecode(rawBody);
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        return {'success': true, 'data': data};
+      }
+      return {
+        'success': false,
+        'message': data is Map ? (data['message'] ?? 'Failed to delete action point') : 'Failed to delete action point',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  // Update action point details
+  static Future<Map<String, dynamic>> updateActionPoint(
+    int actionPointId,
+    String description,
+    String? responsiblePerson,
+    String? dueDate,
+  ) async {
+    try {
+      final token = await _getToken();
+      final response = await http.put(
+        Uri.parse('$baseUrl/action-points/$actionPointId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'description': description,
+          'responsible_person': responsiblePerson,
+          'due_date': dueDate,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'message': data['message'] ?? 'Failed to update action point'};
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
   }
 }

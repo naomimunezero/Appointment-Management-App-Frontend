@@ -4,9 +4,10 @@ import '../theme/app_theme.dart';
 class AppBottomNav extends StatelessWidget {
   final int currentIndex;
   final Function(int) onTap;
-  final VoidCallback onAddTap;
+  final VoidCallback? onAddTap;
+  final bool showReports;
 
-  const AppBottomNav({super.key, required this.currentIndex, required this.onTap, required this.onAddTap});
+  const AppBottomNav({super.key, required this.currentIndex, required this.onTap, this.onAddTap, this.showReports = true});
 
   @override
   Widget build(BuildContext context) {
@@ -27,13 +28,14 @@ class AppBottomNav extends StatelessWidget {
                 _navItem(Icons.home_rounded, 'Home', 0),
                 _navItem(Icons.event_note_rounded, 'Diary', 1),
                 const Expanded(child: SizedBox()),
-                _navItem(Icons.bar_chart_rounded, 'Reports', 2),
+                if (showReports) _navItem(Icons.bar_chart_rounded, 'Reports', 2)
+                else const Expanded(child: SizedBox()),
                 _navItem(Icons.settings_rounded, 'Settings', 3),
               ],
             ),
           ),
         ),
-        Positioned(
+        if (onAddTap != null) Positioned(
           top: -22,
           child: GestureDetector(
             onTap: onAddTap,

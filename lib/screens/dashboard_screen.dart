@@ -19,6 +19,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic>? _summary;
   bool _loading = true;
   String _userName = 'there';
+  bool _canManageAppointments = false;
+  bool _canExportReports = false;
 
   @override
   void initState() {
@@ -28,7 +30,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       statusBarIconBrightness: Brightness.light,
     ));
     _loadUserName();
+    _loadPermissions();
     _loadSummary();
+  }
+
+  Future<void> _loadPermissions() async {
+    final permissions = await Future.wait([
+      ApiService.hasPermission('manage_appointments'),
+      ApiService.hasPermission('export_reports'),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _canManageAppointments = permissions[0];
+      _canExportReports = permissions[1];
+    });
   }
 
   Future<void> _loadUserName() async {
@@ -44,6 +59,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _summary = normalizeDashboardPayload(data);
       _loading = false;
     });
+  }
+
+  Future<void> _openAppointmentDetails(int appointmentId) async {
+    await Navigator.pushNamed(
+      context,
+      '/appointment-details',
+      arguments: {'appointmentId': appointmentId},
+    );
+    if (mounted) _loadSummary();
   }
 
   @override
@@ -67,13 +91,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           NextAppointmentCard(
                             appointment: next,
                             onTap: next != null && next['id'] != null
-                                ? () {
-                                    Navigator.pushNamed(
-                                      context,
-                                      '/appointment-details',
-                                      arguments: {'appointmentId': next['id'] as int},
-                                    );
-                                  }
+                                ? () => _openAppointmentDetails(next['id'] as int)
                                 : null,
                           ),
                           const SizedBox(height: 20),
@@ -94,20 +112,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 80),
-                
+                //const SizedBox(height: 80),
               ],
-            
             ),
       bottomNavigationBar: AppBottomNav(
         currentIndex: 0,
         onTap: (index) {
           if (index == 0) return;
           if (index == 1) Navigator.pushNamed(context, '/diary');
-          if (index == 2) Navigator.pushNamed(context, '/reports');
+          if (index == 2 && _canExportReports) Navigator.pushNamed(context, '/reports');
           if (index == 3) Navigator.pushNamed(context, '/settings');
         },
-        onAddTap: () => Navigator.pushNamed(context, '/new-appointment'),
+        onAddTap: _canManageAppointments ? () => Navigator.pushNamed(context, '/new-appointment') : null,
+        showReports: _canExportReports,
       ),
     );
   }
@@ -240,20 +257,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             final timeValue = item['start_time'] ?? item['time'] ?? '';
             final subtitle = _formatAppointmentDateTime(dateValue.toString(), timeValue.toString());
 
-            return Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: appointmentId == null
-                    ? null
-                    : () {
-                        Navigator.pushNamed(
-                          context,
-                          '/appointment-details',
-                          arguments: {'appointmentId': appointmentId},
-                        );
-                      },
-                child: Container(
+            return Container(
                   padding: const EdgeInsets.all(14),
                   margin: const EdgeInsets.only(bottom: 10),
                   decoration: BoxDecoration(
@@ -277,40 +281,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
                       
-                      //
                       ElevatedButton(
-                      onPressed: appointmentId == null
-                          ? null
-                          : () => Navigator.pushNamed(
-                                context,
-                                '/record-outcome',
-                                arguments: {'appointmentId': appointmentId},
-                              ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.navy,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          //vertical: 7,
+                        onPressed: appointmentId == null
+                            ? null
+                            : () => _openAppointmentDetails(appointmentId),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.navy,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 15,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          elevation: 0,
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: const Text(
-                        'Record outcome',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 10,
+                        child: const Text(
+                          'View details',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                          ),
                         ),
                       ),
-                    ),
                     ],
                   ),
-                ),
-              ),
             );
           }).toList(),
         ],
@@ -319,7 +316,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // Turns "Vincent Mugisha" into "VM". Falls back to "?" if there's
-  // no name yet (e.g. still loading).
+  
   String _initials(String name) {
     final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
     if (parts.isEmpty || name == 'there') return '?';
@@ -334,11 +331,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showCategoryAppointments(String category) {
     final items = _extractCategoryAppointments(category);
     if (items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No $category appointments available right now.')),
-      );
+      AppTheme.showTopSnackBar(context, 'No $category appointments available right now.');
       return;
     }
+
+    // Sort items by latest first
+    // For held appointments, sort by held_at (recording date)
+    // For other categories, sort by appointment_date
+    items.sort((a, b) {
+      if (category == 'held') {
+        final heldAtA = a['held_at'] ?? a['appointment_date'] ?? a['date'] ?? '';
+        final heldAtB = b['held_at'] ?? b['appointment_date'] ?? b['date'] ?? '';
+        return heldAtB.toString().compareTo(heldAtA.toString());
+      } else {
+        final dateA = a['appointment_date'] ?? a['date'] ?? a['scheduled_at'] ?? '';
+        final dateB = b['appointment_date'] ?? b['date'] ?? b['scheduled_at'] ?? '';
+        return dateB.toString().compareTo(dateA.toString());
+      }
+    });
 
     showModalBottomSheet(
       context: context,
@@ -382,19 +392,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   final id = item['id'] ?? item['appointment_id'] ?? item['appointmentId'];
                   final appointmentId = int.tryParse(id?.toString() ?? '');
 
+                  // For held appointments, show recording date/time if available
+                  String subtitle;
+                  if (category == 'held' && item['held_at'] != null) {
+                    final heldAt = item['held_at'];
+                    try {
+                      subtitle = 'Held on ${DateTimeUtils.formatServerTimestamp(heldAt.toString())}';
+                    } catch (e) {
+                      subtitle = _formatAppointmentDateTime(date.toString(), time.toString());
+                    }
+                  } else {
+                    subtitle = _formatAppointmentDateTime(date.toString(), time.toString());
+                  }
+
                   return ListTile(
                     title: Text(title.toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
-                    subtitle: Text(_formatAppointmentDateTime(date.toString(), time.toString())),
+                    subtitle: Text(subtitle),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: appointmentId == null
                         ? null
                         : () {
                             Navigator.pop(context);
-                            Navigator.pushNamed(
-                              context,
-                              '/appointment-details',
-                              arguments: {'appointmentId': appointmentId},
-                            );
+                            _openAppointmentDetails(appointmentId);
                           },
                   );
                 },
@@ -409,11 +428,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showActionPoints() {
     final items = (_summary?['action_points'] ?? _summary?['action_points_due'] ?? const []) as List;
     if (items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No action points due yet.')),
-      );
+      AppTheme.showTopSnackBar(context, 'No action points due yet.');
       return;
     }
+
+    // Sort action points by due date (earliest first)
+    items.sort((a, b) {
+      final dueA = a['due_date'] ?? a['date'] ?? '';
+      final dueB = b['due_date'] ?? b['date'] ?? '';
+      return dueA.toString().compareTo(dueB.toString());
+    });
 
     showModalBottomSheet(
       context: context,

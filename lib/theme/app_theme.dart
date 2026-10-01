@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +15,10 @@ class AppColors {
 }
 
 class AppTheme {
+  static final ValueNotifier<_TopSnackBarNotification?> _topSnackBarMessage =
+      ValueNotifier(null);
+  static Timer? _topSnackBarTimer;
+
   static ThemeData light() {
     final base = ThemeData.light();
 
@@ -70,6 +76,85 @@ class AppTheme {
           borderRadius: BorderRadius.circular(16),
         ),
       ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: AppColors.green,
+        contentTextStyle: const TextStyle(color: Colors.white),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+  }
+
+  /// Shows a green notification just below the app bar.
+  static void showTopSnackBar(
+    BuildContext context,
+    String message, {
+    double appBarHeight = kToolbarHeight,
+  }) {
+    _topSnackBarTimer?.cancel();
+    _topSnackBarMessage.value = _TopSnackBarNotification(
+      message: message,
+      appBarHeight: appBarHeight,
+    );
+    _topSnackBarTimer = Timer(const Duration(seconds: 5), () {
+      _topSnackBarMessage.value = null;
+    });
+  }
+}
+
+class _TopSnackBarNotification {
+  const _TopSnackBarNotification({
+    required this.message,
+    required this.appBarHeight,
+  });
+
+  final String message;
+  final double appBarHeight;
+}
+
+/// App-level notification host: it stays above each route's Scaffold and
+/// positions messages consistently below the status bar and toolbar.
+class AppSnackBarHost extends StatelessWidget {
+  const AppSnackBarHost({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        child,
+        ValueListenableBuilder<_TopSnackBarNotification?>(
+          valueListenable: AppTheme._topSnackBarMessage,
+          builder: (context, notification, _) {
+            if (notification == null) return const SizedBox.shrink();
+            return Positioned(
+              top: mediaQuery.padding.top + notification.appBarHeight + 8,
+              left: 12,
+              right: 12,
+              child: Semantics(
+                liveRegion: true,
+                child: Material(
+                  color: AppColors.green,
+                  elevation: 8,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Text(
+                      notification.message,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+              ));
+          },
+        ),
+      ],
     );
   }
 }

@@ -12,6 +12,10 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  bool _canManageAppointments = false;
+  bool _canExportReports = false;
+  Map<String, dynamic>? _assistantAccess;
+
   @override
   void initState() {
     super.initState();
@@ -19,26 +23,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
       statusBarColor: AppColors.navy,
       statusBarIconBrightness: Brightness.light,
     ));
+    _loadPermissions();
+    _loadAssistantAccess();
+  }
+
+  Future<void> _loadAssistantAccess() async {
+    final result = await ApiService.getAssistantAccess();
+    if (!mounted) return;
+    if (result['success'] != true) return;
+    final assistant = result['assistant'];
+    setState(() => _assistantAccess = assistant is Map ? Map<String, dynamic>.from(assistant) : null);
+  }
+
+  Future<void> _openAssistantAccess() async {
+    final route = _assistantAccess == null ? '/invite-assistant' : '/assistant-details';
+    final result = await Navigator.pushNamed(context, route);
+    if (result is Map) {
+      setState(() => _assistantAccess = Map<String, dynamic>.from(result));
+    }
+    await _loadAssistantAccess();
+  }
+
+  Future<void> _loadPermissions() async {
+    final permissions = await Future.wait([
+      ApiService.hasPermission('manage_appointments'),
+      ApiService.hasPermission('export_reports'),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _canManageAppointments = permissions[0];
+      _canExportReports = permissions[1];
+    });
   }
 
   Future<void> _logout(BuildContext context) async {
     await ApiService.clearToken();
     if (!mounted) return;
     
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('You are logged out. Please login again to continue.'),
-        duration: Duration(seconds: 2),
-        backgroundColor: AppColors.navy,
-      ),
-    );
+    AppTheme.showTopSnackBar(context, 'You are logged out. Please login again to continue.');
     
     Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
   @override
   Widget build(BuildContext context) {
-    const bool hasAssistant = false;
+    final hasAssistant = _assistantAccess != null;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -83,10 +112,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: (index) {
           if (index == 0) Navigator.pushNamed(context, '/dashboard');
           if (index == 1) Navigator.pushNamed(context, '/diary');
-          if (index == 2) Navigator.pushNamed(context, '/reports');
+          if (index == 2 && _canExportReports) Navigator.pushNamed(context, '/reports');
           if (index == 3) return;
         },
-        onAddTap: () => Navigator.pushNamed(context, '/new-appointment'),
+        onAddTap: _canManageAppointments ? () => Navigator.pushNamed(context, '/new-appointment') : null,
+        showReports: _canExportReports,
       ),
     );
   }
@@ -299,7 +329,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: () => Navigator.pushNamed(context, '/invite-assistant'),
+              onTap: _openAssistantAccess,
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -308,9 +338,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 alignment: Alignment.center,
-                child: const Text(
-                  'Invite Assistant',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.orange),
+                child: Text(
+                  _assistantAccess == null ? 'Invite Assistant' : 'Assistant details',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.orange),
                 ),
               ),
             ),

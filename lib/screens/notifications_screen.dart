@@ -120,7 +120,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
 
     try {
-      final dateTime = DateTime.parse(time).toLocal();
+      final dateTime = DateTimeUtils.parseServerTimestamp(time);
+      if (dateTime == null) return time;
 
       final hour = dateTime.hour;
       final minute = dateTime.minute.toString().padLeft(2, '0');
@@ -159,216 +160,193 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 18,
+      body: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 18 + MediaQuery.of(context).padding.top,
+                bottom: 18,
+            ),
+            decoration: const BoxDecoration(
+              color: AppColors.navy,
+              borderRadius: BorderRadius.vertical(
+                //bottom: Radius.circular(20),
               ),
-              decoration: const BoxDecoration(
-                color: AppColors.navy,
-                borderRadius: BorderRadius.vertical(
-                  bottom: Radius.circular(20),
+            ),
+            child: Row(
+              children: [
+                
+                IconButton(
+                  icon: const Icon(
+                    Icons.chevron_left,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                  onPressed: () => Navigator.pop(context),
                 ),
-              ),
+                const Expanded(
+                  child: Text(
+                    'Notifications',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(
+                    Icons.refresh,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                  onPressed: _load,
+                ),
+              ],
+            ),
+          ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(
+              16,
+              14,
+              16,
+              10,
+            ),
+            color: AppColors.background,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  IconButton(
-                    icon: const Icon(
-                      Icons.chevron_left,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                    onPressed: () => Navigator.pop(context),
+                  _FilterChip(
+                    label: 'All',
+                    selected: _selectedType == 'all',
+                    onTap: () => _selectType('all'),
                   ),
-
-                  const Expanded(
-                    child: Text(
-                      'Notifications',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: 'Reminders',
+                    selected: _selectedType == 'reminder',
+                    onTap: () => _selectType('reminder'),
                   ),
-
-                  // Refresh button
-                  IconButton(
-                    icon: const Icon(
-                      Icons.refresh,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                    onPressed: _load,
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: 'Activity',
+                    selected: _selectedType == 'activity',
+                    onTap: () => _selectType('activity'),
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: 'Overdue',
+                    selected: _selectedType == 'overdue',
+                    onTap: () => _selectType('overdue'),
                   ),
                 ],
               ),
             ),
-
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(
-                16,
-                14,
-                16,
-                10,
-              ),
-              color: AppColors.background,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _FilterChip(
-                      label: 'All',
-                      selected: _selectedType == 'all',
-                      onTap: () => _selectType('all'),
-                    ),
-
-                    const SizedBox(width: 8),
-
-                    _FilterChip(
-                      label: 'Reminders',
-                      selected: _selectedType == 'reminder',
-                      onTap: () => _selectType('reminder'),
-                    ),
-
-                    const SizedBox(width: 8),
-
-                    _FilterChip(
-                      label: 'Activity',
-                      selected: _selectedType == 'activity',
-                      onTap: () => _selectType('activity'),
-                    ),
-
-                    const SizedBox(width: 8),
-
-                    _FilterChip(
-                      label: 'Overdue',
-                      selected: _selectedType == 'overdue',
-                      onTap: () => _selectType('overdue'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-
-            Expanded(
-              child: _loading
-                  ? const Center(
-                      child: CircularProgressIndicator(),
-                    )
-                  : filtered.isEmpty
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(30),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.notifications_none,
-                                  size: 50,
-                                  color: Colors.grey[400],
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(),
+                  )
+                : filtered.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(30),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.notifications_none,
+                                size: 50,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                _selectedType == 'all'
+                                    ? 'No notifications right now'
+                                    : 'No ${_selectedType == 'reminder'
+                                        ? 'reminders'
+                                        : _selectedType == 'activity'
+                                            ? 'activity'
+                                            : 'overdue notifications'} right now',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.grey[500],
+                                  fontSize: 14,
                                 ),
-
-                                const SizedBox(height: 12),
-
-                                Text(
-                                  _selectedType == 'all'
-                                      ? 'No notifications right now'
-                                      : 'No ${_selectedType == 'reminder'
-                                          ? 'reminders'
-                                          : _selectedType == 'activity'
-                                              ? 'activity'
-                                              : 'overdue notifications'} right now',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.grey[500],
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : RefreshIndicator(
-                          onRefresh: _load,
-                          child: ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(
-                              16,
-                              6,
-                              16,
-                              20,
-                            ),
-                            itemCount: filtered.length,
-                            itemBuilder: (context, index) {
-                              final notification = Map<String, dynamic>.from(filtered[index], );
-
-                              final type = notification['type']?.toString() ?? '';
-                              final title = notification['title']?.toString() ?? '';
-                              final message = notification['message']?.toString() ?? '';
-                              final time = notification['time']?.toString() ?? '';
-
-                              final appointmentId = notification['appointment_id'];
-                              final purpose = notification['purpose']?.toString();
-                              final appointmentDate = notification['appointment_date']?.toString();
-                              final startTime = notification['start_time']?.toString();
-                              final location = notification['location']?.toString();
-
-                              final hasMeetingInfo = purpose != null && purpose.isNotEmpty;
-                              final cardTitle = hasMeetingInfo ? purpose : title;
-                              final cardBody = hasMeetingInfo
-                                  ? 'Meeting on ${DateTimeUtils.friendlyMeetingDate(appointmentDate, startTime)}'
-                                  : message;
-
-                              String displayTime = _formatTime(time);
-                              if (type == 'reminder' && appointmentDate != null) {
-                                try {
-                                  final dt = DateTime.parse('$appointmentDate ${startTime ?? "00:00:00"}');
-                                  displayTime = DateTimeUtils.relativeCountdown(dt);
-                                } catch (_) {}
-                              }
-
-                              // Show section title when the notification
-                              // type changes.
-                              bool showSection = index == 0;
-
-                              if (index > 0) {
-                                final previous =
-                                    Map<String, dynamic>.from(
-                                  filtered[index - 1],
-                                );
-
-                                final previousType =
-                                    previous['type']?.toString() ?? '';
-
-                                showSection = previousType != type;
-                              }
-
-                              return _NotificationCard(
-                                color: _getNotificationColor(type),
-                                title: cardTitle,        // CHANGED — was: title
-                                body: cardBody,           // CHANGED — was: message
-                                time: displayTime,
-                                sectionTitle: _getSectionTitle(type),
-                                showSection: showSection,
-                                appointmentId: appointmentId,
-                                purpose: purpose,
-                                appointmentDate: appointmentDate,
-                                startTime: startTime,
-                                location: location,
-                              );
-                            },
+                              ),
+                            ],
                           ),
                         ),
-            ),
-          ],
-        ),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _load,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(
+                            16,
+                            6,
+                            16,
+                            20,
+                          ),
+                          itemCount: filtered.length,
+                          itemBuilder: (context, index) {
+                            final notification = Map<String, dynamic>.from(filtered[index]);
+
+                            final type = notification['type']?.toString() ?? '';
+                            final title = notification['title']?.toString() ?? '';
+                            final message = notification['message']?.toString() ?? '';
+                            final time = notification['time']?.toString() ?? '';
+
+                            final appointmentId = notification['appointment_id'];
+                            final purpose = notification['purpose']?.toString();
+                            final appointmentDate = notification['appointment_date']?.toString();
+                            final startTime = notification['start_time']?.toString();
+                            final location = notification['location']?.toString();
+
+                            final hasMeetingInfo = purpose != null && purpose.isNotEmpty;
+                            final cardTitle = hasMeetingInfo ? purpose : title;
+                            final cardBody = hasMeetingInfo
+                                ? 'Meeting on ${DateTimeUtils.friendlyMeetingDate(appointmentDate, startTime)}'
+                                : message;
+
+                            String displayTime = _formatTime(time);
+                            if (type == 'reminder' && appointmentDate != null) {
+                              try {
+                                final dt = DateTime.parse('$appointmentDate ${startTime ?? "00:00:00"}');
+                                displayTime = DateTimeUtils.relativeCountdown(dt);
+                              } catch (_) {}
+                            }
+
+                            bool showSection = index == 0;
+                            if (index > 0) {
+                              final previous = Map<String, dynamic>.from(filtered[index - 1]);
+                              final previousType = previous['type']?.toString() ?? '';
+                              showSection = previousType != type;
+                            }
+
+                            return _NotificationCard(
+                              color: _getNotificationColor(type),
+                              title: cardTitle,
+                              body: cardBody,
+                              time: displayTime,
+                              sectionTitle: _getSectionTitle(type),
+                              showSection: showSection,
+                              appointmentId: appointmentId,
+                              purpose: purpose,
+                              appointmentDate: appointmentDate,
+                              startTime: startTime,
+                              location: location,
+                            );
+                          },
+                        ),
+                      ),
+          ),
+        ],
       ),
     );
   }

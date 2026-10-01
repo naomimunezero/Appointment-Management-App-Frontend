@@ -3,12 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../models/appointment.dart';
+import '../models/action_point.dart';
 import '../services/api_service.dart';
 import '../widgets/appointment_info_section.dart';
 import '../widgets/meeting_with_section.dart';
 import '../widgets/reminders_section.dart';
 import '../widgets/history_section.dart';
 import '../widgets/action_buttons_section.dart';
+import '../widgets/discussion_notes_and_action_points_section.dart';
+import '../utils/date_time_utils.dart';
 
 class AppointmentDetailsScreen extends StatefulWidget {
   final int appointmentId;
@@ -26,6 +29,9 @@ class AppointmentDetailsScreen extends StatefulWidget {
 class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
   late Future<Appointment> _appointmentFuture;
   List<dynamic> _history = [];
+  bool _canManageAppointments = false;
+  bool _canRecordOutcomes = false;
+  bool _canManageActionPoints = false;
 
   @override
   void initState() {
@@ -35,7 +41,141 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
       statusBarIconBrightness: Brightness.light,
     ));
     _appointmentFuture = ApiService.getAppointmentDetails(widget.appointmentId);
+    _loadPermissions();
     _loadHistory();
+  }
+
+  Future<void> _loadPermissions() async {
+    final values = await Future.wait([
+      ApiService.hasPermission('manage_appointments'),
+      ApiService.hasPermission('record_outcomes'),
+      ApiService.hasPermission('manage_action_points'),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _canManageAppointments = values[0];
+      _canRecordOutcomes = values[1];
+      _canManageActionPoints = values[2];
+    });
+  }
+
+  Future<void> _editActionPoint(ActionPoint actionPoint) async {
+    final descriptionController = TextEditingController(text: actionPoint.description);
+    final ownerController = TextEditingController(
+      text: actionPoint.responsiblePerson ?? actionPoint.owner ?? '',
+    );
+    DateTime? dueDate = actionPoint.dueDate;
+    final values = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Edit action point'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: descriptionController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                ),
+                TextField(
+                  controller: ownerController,
+                  decoration: const InputDecoration(labelText: 'Responsible person'),
+                ),
+                TextButton.icon(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: dueDate ?? DateTime.now(),
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) setDialogState(() => dueDate = picked);
+                  },
+                  icon: const Icon(Icons.calendar_today),
+                  label: Text(dueDate == null ? 'No due date' : DateFormat.yMMMd().format(dueDate!)),
+                ),
+                if (dueDate != null)
+                  TextButton(
+                    onPressed: () => setDialogState(() => dueDate = null),
+                    child: const Text('Clear due date'),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, {
+                'description': descriptionController.text.trim(),
+                'owner': ownerController.text.trim(),
+                'dueDate': dueDate,
+              }),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    descriptionController.dispose();
+    ownerController.dispose();
+    if (values == null || (values['description'] as String).isEmpty || !mounted) return;
+    final selectedDate = values['dueDate'] as DateTime?;
+    final result = await ApiService.updateActionPoint(
+      actionPoint.id,
+      values['description'] as String,
+      (values['owner'] as String).isEmpty ? null : values['owner'] as String,
+      selectedDate?.toIso8601String().substring(0, 10),
+    );
+    if (!mounted) return;
+    if (result['success'] == true) {
+      setState(() => _appointmentFuture = ApiService.getAppointmentDetails(widget.appointmentId));
+    } else {
+      AppTheme.showTopSnackBar(
+        context,
+        result['message'] ?? 'Could not edit action point',
+        appBarHeight: kToolbarHeight + kTextTabBarHeight,
+      );
+    }
+  }
+
+  Future<void> _deleteActionPoint(ActionPoint actionPoint) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete action point'),
+        content: const Text('Are you sure you want to delete this action point?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final result = await ApiService.deleteActionPoint(actionPoint.id);
+    if (!mounted) return;
+    if (result['success'] == true) {
+      setState(() => _appointmentFuture = ApiService.getAppointmentDetails(widget.appointmentId));
+    } else {
+      AppTheme.showTopSnackBar(
+        context,
+        result['message'] ?? 'Could not delete action point',
+        appBarHeight: kToolbarHeight + kTextTabBarHeight,
+      );
+    }
+  }
+
+  void _loadAppointmentAndDebug() async {
+    final appointment = await _appointmentFuture;
+    print('Appointment Details Debug:');
+    print('  Status: ${appointment.status}');
+    print('  Held At: ${appointment.heldAt}');
+    print('  Discussion Notes: ${appointment.discussionNotes}');
+    print('  Action Points Count: ${appointment.actionPoints.length}');
+    for (var ap in appointment.actionPoints) {
+      print('    - ${ap.description} (completed: ${ap.completed})');
+    }
   }
   Future<void> _loadHistory() async {
     final data = await ApiService.getAppointmentHistory(widget.appointmentId);
@@ -58,13 +198,26 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
     }
   }
 
-  void _editAppointment() {
-    // Navigate to new appointment screen with this appointment prefilled for editing
-    Navigator.pushNamed(
+  Future<void> _editAppointment() async {
+    final updated = await Navigator.pushNamed(
       context,
       '/new-appointment',
       arguments: {'editAppointmentId': widget.appointmentId},
     );
+    if (updated is Appointment && mounted) {
+      // PUT returns the complete updated appointment. Keep that exact response
+      // so new/removed reminders are visible without waiting for another GET.
+      setState(() {
+        _appointmentFuture = Future.value(updated);
+      });
+      _loadHistory();
+    } else if (updated == true && mounted) {
+      // Retain a safe fallback for an older or non-standard API response.
+      setState(() {
+        _appointmentFuture = ApiService.getAppointmentDetails(widget.appointmentId);
+      });
+      _loadHistory();
+    }
   }
 
   Future<void> _rescheduleAppointment(Appointment appointment) async {
@@ -89,7 +242,9 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         leading: IconButton(
@@ -98,6 +253,16 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
         ),
         title: const Text('Appointment'),
         centerTitle: true,
+        bottom: const TabBar(
+          indicatorColor: Colors.white,
+          indicatorWeight: 3,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          tabs: [
+            Tab(text: 'Details'),
+            Tab(text: 'History'),
+          ],
+        ),
       ),
       body: FutureBuilder<Appointment>(
         future: _appointmentFuture,
@@ -151,108 +316,230 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
 
           final appointment = snapshot.data!;
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Appointment Info Section
-                AppointmentInfoSection(appointment: appointment),
-                const SizedBox(height: 16),
-
-                // Meeting With Section
-                MeetingWithSection(
-                  attendees: appointment.attendees,
-                  sectionTitle: 'MEETING WITH',
-                ),
-                const SizedBox(height: 16),
-
-                // Reminders Section
-                RemindersSection(
-                  reminders: const [
-                    '5 hrs before / sent',
-                    '30 min before',
+          return TabBarView(
+            children: [
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AppointmentInfoSection(appointment: appointment),
+                    const SizedBox(height: 16),
+                    MeetingWithSection(
+                      attendees: appointment.attendees,
+                      sectionTitle: 'MEETING WITH',
+                    ),
+                    const SizedBox(height: 16),
+                    if (!_isHeldAppointment(appointment) &&
+                        (_canRecordOutcomes || _canManageAppointments))
+                      ActionButtonsSection(
+                        onRecordOutcome: _canRecordOutcomes ? _recordOutcome : null,
+                        onEdit: _canManageAppointments ? _editAppointment : null,
+                        onReschedule: _canManageAppointments ? () => _rescheduleAppointment(appointment) : null,
+                      ),
+                    if (_isHeldAppointment(appointment))
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: AppColors.green.withOpacity(0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.check_circle,
+                                  color: AppColors.green,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                const Expanded(
+                                  child: Text(
+                                    'This appointment has been marked as held',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.green,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (appointment.heldAt != null) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                'Recorded on ${_formatHeldAt(appointment.heldAt!)}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    // Show discussion notes and action points for held appointments
+                    if (_isHeldAppointment(appointment))
+                      DiscussionNotesAndActionPointsSection(
+                        discussionNotes: appointment.discussionNotes,
+                        actionPoints: appointment.actionPoints,
+                        markDoneOnly: true,
+                        showToggle: _canManageActionPoints,
+                        onActionPointToggle: _canManageActionPoints ? (index, completed) async {
+                          try {
+                            final actionPoint = appointment.actionPoints[index];
+                            final result = await ApiService.updateActionPointStatus(
+                              actionPoint.id,
+                              completed,
+                            );
+                            if (result['success'] != true) {
+                              throw Exception(
+                                result['message'] ?? 'Could not update the action point',
+                              );
+                            }
+                            setState(() {
+                              _appointmentFuture = ApiService.getAppointmentDetails(widget.appointmentId);
+                            });
+                          } catch (e) {
+                            AppTheme.showTopSnackBar(
+                              context,
+                              'Error updating action point: $e',
+                              appBarHeight: kToolbarHeight + kTextTabBarHeight,
+                            );
+                          }
+                        } : null,
+                        
+                      )
+                    else
+                      RemindersSection(
+                        reminders: _formatReminders(appointment.reminders),
+                      ),
+                    const SizedBox(height: 24),
                   ],
                 ),
-                const SizedBox(height: 16),
-
-                // History Section
-                HistorySection(
-                  historyItems: _buildHistoryItems(appointment),
-                ),
-                const SizedBox(height: 16),
-
-                // Action Buttons Section - Only show for upcoming appointments
-                if (!_isHeldAppointment(appointment))
-                  ActionButtonsSection(
-                    onRecordOutcome: _recordOutcome,
-                    onEdit: _editAppointment,
-                    onReschedule: () => _rescheduleAppointment(appointment),
-                  ),
-                // For held appointments, show a summary badge
-                if (_isHeldAppointment(appointment))
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.green.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.green.withOpacity(0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.check_circle,
-                          color: AppColors.green,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text(
-                            'This appointment has been marked as held',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.green,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 24),
-              ],
-            ),
+              ),
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: HistorySection(historyItems: _buildHistoryItems(appointment)),
+              ),
+            ],
           );
         },
+      ),
       ),
     );
   }
 
   List<HistoryItem> _buildHistoryItems(Appointment appointment) {
     return _history.map((entry) {
-      final createdAt = DateTime.tryParse(entry['created_at'] ?? '') ?? DateTime.now();
-      final action = (entry['action'] ?? '').toString();
+      final details = entry['details'] is Map
+          ? Map<String, dynamic>.from(entry['details'] as Map)
+          : <String, dynamic>{};
+      final actor = entry['performed_by'] is Map
+          ? Map<String, dynamic>.from(entry['performed_by'] as Map)
+          : <String, dynamic>{};
+      final createdAt = DateTimeUtils.parseServerTimestamp(entry['created_at']?.toString()) ?? DateTime.now();
+      final eventType = (entry['type'] ?? entry['audit_action'] ?? entry['action_type'] ?? entry['action'] ?? '')
+          .toString()
+          .toLowerCase();
+      final description = (entry['description'] ?? entry['action'] ?? '').toString();
+      String actionLabel = description;
+      String? eventDetail;
+
+      if (eventType == 'action_point_added') {
+        final actionPoint = details['action_point'] is Map
+            ? Map<String, dynamic>.from(details['action_point'] as Map)
+            : <String, dynamic>{};
+        final pointDescription = (actionPoint['description'] ?? '').toString().trim();
+        actionLabel = pointDescription.isNotEmpty
+            ? 'Action point added: $pointDescription'
+            : (description.isNotEmpty ? description : 'Action point added');
+        final responsible = actionPoint['responsible_person']?.toString();
+        if (responsible != null && responsible.trim().isNotEmpty) {
+          eventDetail = 'Responsible: ${responsible.trim()}';
+        }
+      } else if (eventType == 'person_added_to_meet') {
+        final person = details['person'] ?? details['attendee'] ?? details['person_added'];
+        final personName = person is Map
+            ? (person['name'] ?? person['full_name'] ?? person['email'])?.toString()
+            : person?.toString();
+        final name = personName?.trim() ?? '';
+        actionLabel = name.isNotEmpty
+            ? '$name was added to the meeting'
+            : (description.isNotEmpty ? description : 'Person added to the meeting');
+      } else if (eventType.contains('reschedul')) {
+        actionLabel = description.isNotEmpty ? description : 'Rescheduled appointment';
+      } else if (eventType.contains('edit')) {
+        actionLabel = description.isNotEmpty ? description : 'Edited appointment';
+      }
+
+      if (actionLabel.isEmpty) actionLabel = 'Appointment updated';
 
       IconData icon = Icons.check_circle;
       Color iconColor = AppColors.teal;
-      if (action.contains('rescheduled')) {
+      if (eventType == 'person_added_to_meet') {
+        icon = Icons.person_add_alt_1;
+        iconColor = AppColors.orange;
+      } else if (eventType == 'action_point_added') {
+        icon = Icons.add_task;
+        iconColor = AppColors.green;
+      } else if (eventType.contains('reschedul')) {
         icon = Icons.cached;
         iconColor = AppColors.orange;
-      } else if (action.contains('cancelled')) {
+      } else if (eventType.contains('cancelled')) {
         icon = Icons.cancel;
         iconColor = AppColors.red;
-      } else if (action.contains('outcome')) {
+      } else if (eventType.contains('outcome')) {
         icon = Icons.task_alt;
         iconColor = AppColors.green;
       }
 
       return HistoryItem(
-        action: action,
-        details: 'by ${entry['user_name'] ?? 'Unknown'}',
+        action: actionLabel,
+        details: [
+          if (eventDetail != null) eventDetail,
+          'by ${actor['name'] ?? entry['user_name'] ?? 'Unknown'}',
+        ].join(' | '),
         timestamp: createdAt,
         icon: icon,
         iconColor: iconColor,
       );
+    }).toList();
+  }
+
+  String _formatHeldAt(String heldAt) {
+    try {
+      final dateTime = DateTime.parse(heldAt);
+      final formattedDate = DateTimeUtils.formatDateFromDateTime(dateTime);
+      final formattedTime = DateTimeUtils.formatTimeFromDateTime(dateTime);
+      return '$formattedDate at $formattedTime';
+    } catch (e) {
+      return heldAt;
+    }
+  }
+
+  List<String> _formatReminders(List<Map<String, dynamic>> reminders) {
+    // Filter out reminders with null or invalid minutes_before
+    final validReminders = reminders.where((r) {
+      final minutes = r['minutes_before'];
+      return minutes != null && minutes is int && minutes > 0;
+    }).toList();
+
+    if (validReminders.isEmpty) {
+      return const ['5 hrs before', '30 min before'];
+    }
+
+    return validReminders.map((r) {
+      final minutes = r['minutes_before'] as int;
+      if (minutes < 60) return '$minutes min before';
+      final hours = (minutes / 60).floor();
+      final remainingMins = minutes % 60;
+      if (remainingMins == 0) return '$hours hr${hours > 1 ? 's' : ''} before';
+      return '$hours hr${hours > 1 ? 's' : ''} $remainingMins min before';
     }).toList();
   }
 }
@@ -272,7 +559,10 @@ class _EditAppointmentSheetState extends State<_EditAppointmentSheet> {
   late TimeOfDay _selectedTime;
   late final TextEditingController _durationController;
   late final TextEditingController _locationController;
+  late final TextEditingController _onlineLinkController;
   bool _saving = false;
+  bool _cancelling = false;
+  String _locationType = 'physical';
 
   @override
   void initState() {
@@ -281,6 +571,13 @@ class _EditAppointmentSheetState extends State<_EditAppointmentSheet> {
     _selectedTime = _parseTime(widget.appointment.startTime);
     _durationController = TextEditingController(text: '${widget.appointment.durationMinutes}');
     _locationController = TextEditingController(text: widget.appointment.location ?? '');
+    _onlineLinkController = TextEditingController(
+      text: widget.appointment.onlineLink ??
+          (widget.appointment.locationType == 'online'
+              ? widget.appointment.location ?? ''
+              : ''),
+    );
+    _locationType = widget.appointment.locationType ?? 'physical';
   }
 
   TimeOfDay _parseTime(String value) {
@@ -298,6 +595,7 @@ class _EditAppointmentSheetState extends State<_EditAppointmentSheet> {
   void dispose() {
     _durationController.dispose();
     _locationController.dispose();
+    _onlineLinkController.dispose();
     super.dispose();
   }
 
@@ -324,20 +622,29 @@ class _EditAppointmentSheetState extends State<_EditAppointmentSheet> {
 
     final result = await ApiService.updateAppointment(
       appointmentId: widget.appointment.id,
+      auditAction: 'rescheduled',
       purpose: widget.appointment.purpose,
       date: DateFormat('yyyy-MM-dd').format(_selectedDate),
       startTime: '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
       durationMinutes: int.parse(_durationController.text),
-      location: _locationController.text.trim(),
-    );
+      location: _locationType == 'physical'
+          ? _locationController.text.trim()
+          : _onlineLinkController.text.trim(),
+      locationType: _locationType,
+      onlineLink: _locationType == 'online' ? _onlineLinkController.text.trim() : null,
+      attendees: widget.appointment.attendeeDetails,
+      reminders: widget.appointment.reminders,
+      );
 
     if (!mounted) return;
     setState(() => _saving = false);
     if (result['success'] == true) {
       Navigator.pop(context, true);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['message'] ?? 'Failed to update appointment')),
+      AppTheme.showTopSnackBar(
+        context,
+        result['message'] ?? 'Failed to update appointment',
+        appBarHeight: kToolbarHeight + kTextTabBarHeight,
       );
     }
   }
@@ -378,7 +685,7 @@ class _EditAppointmentSheetState extends State<_EditAppointmentSheet> {
                 ),
               ),
               const Text(
-                'Edit appointment',
+                'Reschedule appointment',
                 style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.navy),
               ),
               const SizedBox(height: 4),
@@ -424,23 +731,83 @@ class _EditAppointmentSheetState extends State<_EditAppointmentSheet> {
                               },
                             ),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      const Text('LOCATION TYPE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.navy)),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _locationType = 'physical'),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: _locationType == 'physical' ? AppColors.orange.withOpacity(0.12) : Colors.white,
+                                  border: Border.all(color: _locationType == 'physical' ? AppColors.orange : Colors.grey.shade300),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Physical',
+                                  style: TextStyle(
+                                    color: _locationType == 'physical' ? AppColors.orange : Colors.grey[600],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: TextFormField(
-                              controller: _locationController,
-                              decoration: const InputDecoration(labelText: 'Location'),
-                              validator: (value) => value == null || value.trim().isEmpty ? 'Required' : null,
+                            child: GestureDetector(
+                              onTap: () => setState(() => _locationType = 'online'),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: _locationType == 'online' ? AppColors.orange.withOpacity(0.12) : Colors.white,
+                                  border: Border.all(color: _locationType == 'online' ? AppColors.orange : Colors.grey.shade300),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Virtual / Online',
+                                  style: TextStyle(
+                                    color: _locationType == 'online' ? AppColors.orange : Colors.grey[600],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ],
                       ),
+                      const SizedBox(height: 18),
+                      if (_locationType == 'physical')
+                        TextFormField(
+                          controller: _locationController,
+                          decoration: const InputDecoration(labelText: 'Physical Location'),
+                          validator: (value) => value == null || value.trim().isEmpty ? 'Required' : null,
+                        ),
+                      if (_locationType == 'online')
+                        TextFormField(
+                          controller: _onlineLinkController,
+                          decoration: const InputDecoration(labelText: 'Meeting Link'),
+                          validator: (value) => value == null || value.trim().isEmpty ? 'Required' : null,
+                        ),
                   const SizedBox(height: 14),
                   Row(
                     children: [
                       Expanded(
                         child: ElevatedButton(
-                          onPressed: _saving ? null : () => Navigator.pop(context),
-                          child: _saving
+                          onPressed: _saving || _cancelling
+                              ? null
+                              : () {
+                                  setState(() => _cancelling = true);
+                                  Navigator.pop(context);
+                                },
+                          child: _cancelling
                               ? const SizedBox(width: 14, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
                               : const Text('Cancel'),
                         ),
@@ -448,7 +815,7 @@ class _EditAppointmentSheetState extends State<_EditAppointmentSheet> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton(
-                          onPressed: _saving ? null : _save,
+                          onPressed: _saving || _cancelling ? null : _save,
                           child: _saving
                               ? const SizedBox(width: 14, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
                               : const Text('Save changes'),

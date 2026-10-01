@@ -128,12 +128,7 @@ class _ActionPointsTrackerScreenState extends State<ActionPointsTrackerScreen> {
   void _toggleActionPoint(int index) {
     final ap = _filteredActionPoints[index];
     // TODO: Call API to update status
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Marked as ${ap.status == "done" ? "pending" : "done"}'),
-        backgroundColor: AppColors.green,
-      ),
-    );
+    AppTheme.showTopSnackBar(context, 'Marked as ${ap.status == "done" ? "pending" : "done"}');
   }
 
   @override

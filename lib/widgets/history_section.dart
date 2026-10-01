@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../utils/date_time_utils.dart';
+import '../utils/date_time_utils.dart';
 
 class HistoryItem {
   final String action;
@@ -26,14 +28,16 @@ class HistorySection extends StatelessWidget {
   });
 
   String _formatTime(DateTime dateTime) {
-    final now = DateTime.now();
+    // History items are normalized to Uganda time when read from the API.
+    final localDateTime = dateTime;
+    final now = DateTimeUtils.nowInUganda();
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = today.subtract(const Duration(days: 1));
-    final dateOnly = DateTime(dateTime.year, dateTime.month, dateTime.day);
+    final dateOnly = DateTime(localDateTime.year, localDateTime.month, localDateTime.day);
 
     // Format time as 12-hour format with AM/PM
-    final hour = dateTime.hour;
-    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final hour = localDateTime.hour;
+    final minute = localDateTime.minute.toString().padLeft(2, '0');
     final period = hour >= 12 ? 'PM' : 'AM';
     final displayHour = hour % 12 == 0 ? 12 : hour % 12;
     final timeStr = '$displayHour:$minute $period';
@@ -43,7 +47,7 @@ class HistorySection extends StatelessWidget {
     } else if (dateOnly == yesterday) {
       return 'Yesterday at $timeStr';
     } else {
-      return '${dateTime.day} ${_monthName(dateTime.month)} at $timeStr';
+      return '${localDateTime.day} ${_monthName(localDateTime.month)} at $timeStr';
     }
   }
 
@@ -133,7 +137,7 @@ class HistorySection extends StatelessWidget {
                               height: 40,
                               color: const Color(0xFFE2E5EA),
                               margin: const EdgeInsets.symmetric(vertical: 4),
-                            ),
+                            ), 
                         ],
                       ),
                       const SizedBox(width: 12),

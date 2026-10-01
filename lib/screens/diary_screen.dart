@@ -18,6 +18,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
   late DateTime _selectedDate;
   late DateTime _weekStart;
   bool _loading = true;
+  bool _canManageAppointments = false;
+  bool _canExportReports = false;
 
   // Appointments grouped by "yyyy-MM-dd" key.
   Map<String, List<Map<String, dynamic>>> _appointmentsByDate = {};
@@ -33,7 +35,20 @@ class _DiaryScreenState extends State<DiaryScreen> {
     ));
     _selectedDate = DateTime.now();
     _weekStart = startOfWeek(_selectedDate);
+    _loadPermissions();
     _loadWeek();
+  }
+
+  Future<void> _loadPermissions() async {
+    final permissions = await Future.wait([
+      ApiService.hasPermission('manage_appointments'),
+      ApiService.hasPermission('export_reports'),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _canManageAppointments = permissions[0];
+      _canExportReports = permissions[1];
+    });
   }
 
   Future<void> _loadWeek() async {
@@ -72,6 +87,15 @@ class _DiaryScreenState extends State<DiaryScreen> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _openAppointmentDetails(int appointmentId) async {
+    await Navigator.pushNamed(
+      context,
+      '/appointment-details',
+      arguments: {'appointmentId': appointmentId},
+    );
+    if (mounted) _loadWeek();
   }
 
   @override
@@ -160,7 +184,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
             return;
           }
 
-          if (index == 2) {
+          if (index == 2 && _canExportReports) {
             Navigator.pushNamed(context, '/reports');
           }
 
@@ -168,12 +192,13 @@ class _DiaryScreenState extends State<DiaryScreen> {
             Navigator.pushNamed(context, '/settings');
           }
         },
-        onAddTap: () {
+        onAddTap: _canManageAppointments ? () {
           Navigator.pushNamed(
             context,
             '/new-appointment',
           );
-        },
+        } : null,
+        showReports: _canExportReports,
       ),
     );
   }
@@ -291,13 +316,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                         a['id'] as int?;
 
                     if (appointmentId != null) {
-                      Navigator.pushNamed(
-                        context,
-                        '/appointment-details',
-                        arguments: {
-                          'appointmentId': appointmentId,
-                        },
-                      );
+                      _openAppointmentDetails(appointmentId);
                     }
                   },
                 ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
@@ -10,6 +11,7 @@ import '../widgets/stat_cards_row.dart';
 import '../widgets/report_widgets.dart';
 import '../widgets/bottom_nav_bar.dart';
 import 'appointment_preview_screen.dart';
+import 'dart:typed_data';
 
 enum ReportRange { thisWeek, last7, last2Weeks }
 
@@ -25,6 +27,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
   ReportSummary? _report;
   Appointment? _selected;
   bool _loading = true;
+  bool _permissionChecked = false;
+  bool _canExportReports = false;
+  bool _canManageAppointments = false;
+  bool _exporting = false;
 
   DateTimeRange _rangeFor(ReportRange r) {
     final now = DateTime.now();
@@ -81,6 +87,30 @@ class _ReportsScreenState extends State<ReportsScreen> {
     });
   }
 
+  Future<void> _exportPdf() async {
+    setState(() => _exporting = true);
+    try {
+      final range = _rangeFor(_range);
+      final bytes = await ApiService.exportReportPdf(range.start, range.end);
+      if (!mounted) return;
+      final filename = 'appointment-report-${DateFormat('yyyyMMdd').format(range.start)}-${DateFormat('yyyyMMdd').format(range.end)}.pdf';
+      await Share.shareXFiles([
+        //XFile.fromData(bytes, mimeType: 'application/pdf', name: filename),
+        XFile.fromData(
+          Uint8List.fromList(bytes),
+          mimeType: 'application/pdf',
+          name: filename,
+        ),
+      ], subject: 'Appointment report');
+    } catch (e) {
+      if (mounted) {
+        AppTheme.showTopSnackBar(context, 'Could not export report: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -88,7 +118,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
       statusBarColor: AppColors.navy,
       statusBarIconBrightness: Brightness.light,
     ));
-    _load();
+    _loadPermission();
+  }
+
+  Future<void> _loadPermission() async {
+    final permissions = await Future.wait([
+      ApiService.hasPermission('export_reports'),
+      ApiService.hasPermission('manage_appointments'),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _canExportReports = permissions[0];
+      _canManageAppointments = permissions[1];
+      _permissionChecked = true;
+    });
+    if (permissions[0]) _load();
   }
 
   Widget _rangeChip(String label, ReportRange value) {
@@ -121,6 +165,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_permissionChecked) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (!_canExportReports) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Reports')),
+        body: const Center(child: Text('You do not have permission to view reports.')),
+      );
+    }
     final r = _report;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -154,6 +207,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
               fontWeight: FontWeight.w800,
             ),
           ),
+
+          actions: [
+            IconButton(
+              tooltip: 'Export PDF',
+              onPressed: _exporting ? null : _exportPdf,
+              icon: _exporting
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.ios_share),
+            ),
+          ],
 
           centerTitle: false,
         ),
@@ -285,12 +348,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
               Navigator.pushNamed(context, '/settings');
             }
           },
-          onAddTap: () {
+          onAddTap: _canManageAppointments ? () {
             Navigator.pushNamed(
               context,
               '/new-appointment',
             );
-          },
+          } : null,
         ),
       ),
     );

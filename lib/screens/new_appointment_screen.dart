@@ -1,8 +1,10 @@
 import 'package:appointment_app/services/attendee_history_service.dart';
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../models/appointment.dart';
 import '../services/api_service.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../widgets/field_label.dart';
@@ -23,15 +25,19 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
   final _emailController = TextEditingController();
   final _durationController = TextEditingController(text: '60');
   final _locationController = TextEditingController();
+  final _onlineLinkController = TextEditingController();
   final _reminderMinutesController = TextEditingController();
   final _nameController = TextEditingController();
+
+  final _emailFocusNode = FocusNode();
+  final LayerLink _layerLink = LayerLink();
+  OverlayEntry? _overlayEntry;
 
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   String _durationUnit = 'min';
   String _locationType = 'physical';
-  String? _onlineLink;
-  String _reminderUnit = 'min'; 
+  String _reminderUnit = 'min';
 
 
   int? _durationInMinutes() {
@@ -47,10 +53,14 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
   ];
 
   bool _loading = false;
+  bool _loadingAppointmentForEdit = false;
   bool _checkingConflict = false;
   String? _conflictError;
   List<dynamic> _searchResults = [];
   bool _showSearchResults = false;
+  bool _permissionChecked = false;
+  bool _canManageAppointments = false;
+  bool _canExportReports = false;
 
   @override
   void initState() {
@@ -59,68 +69,85 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
       statusBarColor: AppColors.navy,
       statusBarIconBrightness: Brightness.light,
     ));
-    _checkForEditAppointment();
+    _loadPermission();
+
+    _emailFocusNode.addListener(() {
+      if (!_emailFocusNode.hasFocus) _removeOverlay();
+    });
+  }
+
+  Future<void> _loadPermission() async {
+    final permissions = await Future.wait([
+      ApiService.hasPermission('manage_appointments'),
+      ApiService.hasPermission('export_reports'),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _canManageAppointments = permissions[0];
+      _canExportReports = permissions[1];
+      _permissionChecked = true;
+    });
+    if (permissions[0]) _checkForEditAppointment();
   }
 
   Future<void> _checkForEditAppointment() async {
     // Check if we're editing an existing appointment
     if (widget.editAppointmentId != null) {
+      setState(() => _loadingAppointmentForEdit = true);
       try {
         final appointment = await ApiService.getAppointmentDetails(widget.editAppointmentId!);
         if (mounted) {
           _prefillFormFromAppointment(appointment);
         }
       } catch (e) {
-        print('Error loading appointment for edit: $e');
+        if (mounted) {
+          AppTheme.showTopSnackBar(context, 'Could not load appointment details: $e');
+        }
+      } finally {
+        if (mounted) setState(() => _loadingAppointmentForEdit = false);
       }
     }
   }
 
-  void _prefillFormFromAppointment(dynamic appointment) {
+  void _prefillFormFromAppointment(Appointment appointment) {
     setState(() {
-      _purposeController.text = appointment.purpose ?? '';
-      _durationController.text = '${appointment.durationMinutes ?? 60}';
+      _purposeController.text = appointment.purpose;
+      _durationController.text = '${appointment.durationMinutes}';
       _locationController.text = appointment.location ?? '';
+      _onlineLinkController.text = appointment.onlineLink ?? '';
 
       // Parse date and time
-      if (appointment.appointmentDate != null) {
-        _selectedDate = DateTime.tryParse(appointment.appointmentDate);
+      _selectedDate = DateTime.tryParse(appointment.appointmentDate);
+
+      final parts = appointment.startTime.split(':');
+      if (parts.length >= 2) {
+        _selectedTime = TimeOfDay(
+          hour: int.tryParse(parts[0]) ?? 9,
+          minute: int.tryParse(parts[1]) ?? 0,
+        );
       }
 
-      if (appointment.startTime != null) {
-        final parts = appointment.startTime.split(':');
-        if (parts.length >= 2) {
-          _selectedTime = TimeOfDay(
-            hour: int.tryParse(parts[0]) ?? 9,
-            minute: int.tryParse(parts[1]) ?? 0,
-          );
-        }
-      }
+      _locationType = appointment.locationType ?? 'physical';
 
-      // Set location type
-      if (appointment.locationType != null) {
-        _locationType = appointment.locationType;
-      }
+      // Make a copy so editing chips never mutates the model returned by GET.
+      _attendees = appointment.attendeeDetails
+          .map((attendee) => Map<String, String>.from(attendee))
+          .toList();
 
-      // Prefill attendees
-      if (appointment.attendees != null && appointment.attendees is List) {
-        _attendees = (appointment.attendees as List)
-            .map((attendee) => <String, String>{
-                  'name': (attendee['name'] ?? '').toString(),
-                  'email': (attendee['email'] ?? '').toString(),
-                })
-            .toList();
-      }
-
-      // Prefill reminders if available
-      if (appointment.reminders != null && appointment.reminders is List) {
-        _reminders = (appointment.reminders as List)
-            .map((reminder) => {
-                  'minutes_before': reminder['minutes_before'] ?? 30,
-                })
-            .toList();
-      }
+      // An empty array is meaningful: it lets the user save an appointment
+      // with no reminders after removing the existing rows.
+      _reminders = appointment.reminders
+          .map((reminder) => <String, dynamic>{
+                'minutes_before': _reminderMinutes(reminder),
+              })
+          .where((reminder) => (reminder['minutes_before'] as int) > 0)
+          .toList();
     });
+  }
+
+  int _reminderMinutes(Map<String, dynamic> reminder) {
+    final value = reminder['minutes_before'];
+    return value is num ? value.toInt() : int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   @override
@@ -129,8 +156,11 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
     _emailController.dispose();
     _durationController.dispose();
     _locationController.dispose();
+    _onlineLinkController.dispose();
     _reminderMinutesController.dispose();
     _nameController.dispose();
+    _removeOverlay();
+    _emailFocusNode.dispose();
     super.dispose();
   }
 
@@ -215,7 +245,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
 
   Future<void> _searchUsers(String query) async {
     if (query.isEmpty) {
-      setState(() => _showSearchResults = false);
+      _removeOverlay();
       return;
     }
 
@@ -230,25 +260,106 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
 
     setState(() {
       _searchResults = combined;
-      _showSearchResults = true;
+      _showSearchResults = combined.isNotEmpty;
     });
+
+    if (combined.isNotEmpty) {
+      _showOverlay();
+    } else {
+      _removeOverlay();
+    }
+  }
+
+  //
+  void _showOverlay() {
+    _removeOverlay();
+
+  final screenWidth = MediaQuery.of(context).size.width;
+  final renderBox = context.findRenderObject() as RenderBox?;
+
+  final width = (renderBox?.size.width ?? screenWidth - 40)
+      .clamp(0.0, screenWidth - 38);
+
+    _overlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        width: width,
+        child: CompositedTransformFollower(
+          link: _layerLink,
+          showWhenUnlinked: false,
+          offset: const Offset(0, 45),
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              constraints: const BoxConstraints(
+                maxHeight: 200
+                ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                physics: const ClampingScrollPhysics(),
+                itemCount: _searchResults.length,
+                itemBuilder: (context, index) {
+                  final user = _searchResults[index];
+                  return ListTile(
+                    title: Text(user['name'] ?? 'Unknown'),
+                    subtitle: Text(user['email']),
+                    onTap: () {
+                      _addAttendeeEmail(user['email'], name: user['name']);
+                      _nameController.clear();
+                      _removeOverlay();
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+    if (_showSearchResults) setState(() => _showSearchResults = false);
   }
 
   void _addAttendeeEmail(String email, {String? name}) {
     final trimmedEmail = email.trim();
-    if (isValidEmail(trimmedEmail) && !_attendees.any((a) => a['email'] == trimmedEmail)) {
-      final resolvedName = name?.trim().isNotEmpty == true ? name!.trim() : trimmedEmail.split('@').first;
-      setState(() {
-        _attendees.add({'name': resolvedName, 'email': trimmedEmail});
-        _emailController.clear();
-        _showSearchResults = false;
-      });
-      AttendeeHistoryService.save(resolvedName, trimmedEmail);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid email address')),
-      );
+    final normalizedEmail = trimmedEmail.toLowerCase();
+    
+    // Check if email is already added
+    if (_attendees.any((a) => a['email']?.trim().toLowerCase() == normalizedEmail)) {
+      // Search suggestions are rendered in an OverlayEntry above the Scaffold.
+      // Close it first so it cannot cover the snackbar.
+      _removeOverlay();
+      AppTheme.showTopSnackBar(context, 'This email has already been added');
+      return;
     }
+    
+    // Check if email is valid
+    if (!isValidEmail(trimmedEmail)) {
+      AppTheme.showTopSnackBar(context, 'Please enter a valid email address');
+      return;
+    }
+    
+    // Add the attendee
+    final resolvedName = name?.trim().isNotEmpty == true ? name!.trim() : trimmedEmail.split('@').first;
+    setState(() {
+      _attendees.add({'name': resolvedName, 'email': trimmedEmail});
+      _emailController.clear();
+      _showSearchResults = false;
+    });
+    _removeOverlay();
+    AttendeeHistoryService.save(resolvedName, trimmedEmail);
   }
 
   void _removeAttendeeEmail(String email) {
@@ -311,9 +422,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                   });
                   Navigator.pop(context);
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please enter a valid number')),
-                  );
+                  AppTheme.showTopSnackBar(context, 'Please enter a valid number');
                 }
               },
               child: const Text('Add'),
@@ -325,52 +434,42 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
   }
 
   void _removeReminder(int index) {
-    if (_reminders.length > 1) {
-      setState(() => _reminders.removeAt(index));
-    }
+    setState(() => _reminders.removeAt(index));
   }
 
   Future<void> _saveAppointment() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a date')),
+      AppTheme.showTopSnackBar(context, 'Please select a date'
       );
       return;
     }
     if (_selectedTime == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a time')),
+      AppTheme.showTopSnackBar(context, 'Please select a time'
       );
       return;
     }
     
     final durationMinutes = _durationInMinutes();
     if (durationMinutes == null || durationMinutes < 15) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Minimum duration is 15 minutes')),
+      AppTheme.showTopSnackBar(context, 'Minimum duration is 15 minutes'
       );
       return;
     }
     
     if (_conflictError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please resolve time conflicts')),
+      AppTheme.showTopSnackBar(context, 'Please resolve time conflicts'
       );
       return;
     }
     
     if (_locationType == 'physical' && _locationController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a location')),
-      );
+      AppTheme.showTopSnackBar(context, 'Please enter a location');
       return;
     }
     
-    if (_locationType == 'online' && (_onlineLink == null || _onlineLink!.isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please add a meeting link')),
-      );
+    if (_locationType == 'online' && _onlineLinkController.text.trim().isEmpty) {
+      AppTheme.showTopSnackBar(context, 'Please add a meeting link');
       return;
     }
 
@@ -379,35 +478,78 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
     final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate!);
     final timeStr = _formatTime(_selectedTime!);
 
-    final result = await ApiService.createAppointment(
-      purpose: _purposeController.text.trim(),
-      date: dateStr,
-      startTime: timeStr,
-      durationMinutes: durationMinutes,
-      attendees: _attendees,
-      locationType: _locationType,
-      location: _locationType == 'physical' ? _locationController.text.trim() : null,
-      onlineLink: _locationType == 'online' ? _onlineLink : null,
-      reminders: _reminders,
-    );
+    // Debug: Print reminders being sent
+    print('SAVE APPOINTMENT - Is Editing: ${widget.editAppointmentId != null}');
+    print('SAVE APPOINTMENT - Reminders: $_reminders');
+    print('SAVE APPOINTMENT - Reminders count: ${_reminders.length}');
+
+    final isEditing = widget.editAppointmentId != null;
+    final result = isEditing
+        ? await ApiService.updateAppointment(
+            appointmentId: widget.editAppointmentId!,
+            auditAction: 'edited',
+            purpose: _purposeController.text.trim(),
+            date: dateStr,
+            startTime: timeStr,
+            durationMinutes: durationMinutes,
+            location: _locationType == 'physical'
+                ? _locationController.text.trim()
+                : _onlineLinkController.text.trim(),
+            locationType: _locationType,
+            onlineLink: _locationType == 'online' ? _onlineLinkController.text.trim() : null,
+            attendees: _attendees,
+            reminders: _reminders,
+          )
+        : await ApiService.createAppointment(
+            purpose: _purposeController.text.trim(),
+            date: dateStr,
+            startTime: timeStr,
+            durationMinutes: durationMinutes,
+            attendees: _attendees,
+            locationType: _locationType,
+            location: _locationType == 'physical'
+                ? _locationController.text.trim()
+                : _onlineLinkController.text.trim(),
+            onlineLink: _locationType == 'online' ? _onlineLinkController.text.trim() : null,
+            reminders: _reminders,
+          );
 
     setState(() => _loading = false);
 
     if (result['success'] == true) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Appointment created successfully!')),
-      );
-      Navigator.pop(context);
+      AppTheme.showTopSnackBar(context, isEditing ? 'Appointment updated successfully!' : 'Appointment created successfully!');
+      // The update response is authoritative. Passing it back lets the detail
+      // screen replace its state immediately, including the returned reminders.
+      final appointment = _appointmentFromResponse(result['appointment']);
+      Navigator.pop(context, appointment ?? true);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['message'] ?? 'Failed to create appointment')),
-      );
+      AppTheme.showTopSnackBar(context, result['message'] ?? (isEditing ? 'Failed to update appointment' : 'Failed to create appointment'));
+    }
+  }
+
+  Appointment? _appointmentFromResponse(dynamic response) {
+    if (response is! Map) return null;
+    final payload = response['appointment'] ?? response['data'] ?? response;
+    if (payload is! Map || payload['id'] == null) return null;
+    try {
+      return Appointment.fromJson(Map<String, dynamic>.from(payload));
+    } catch (_) {
+      return null;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_permissionChecked) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (!_canManageAppointments) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Appointment')),
+        body: const Center(child: Text('You do not have permission to manage appointments.')),
+      );
+    }
     final canSave = _selectedDate != null &&
                     _selectedTime != null &&
                     (_durationInMinutes() ?? 0) >= 15 &&
@@ -417,13 +559,15 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('New appointment'),
+        title: Text(widget.editAppointmentId == null ? 'New appointment' : 'Edit appointment'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: SafeArea(
+      body: _loadingAppointmentForEdit
+          ? const Center(child: CircularProgressIndicator(color: AppColors.navy))
+          : SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Form(
@@ -574,117 +718,70 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
 
                 const SizedBox(height: 20),
 
-                // PERSON(S) TO MEET
+                //
                 // PERSON(S) TO MEET
                 const FieldLabel('PERSON(S) TO MEET', required: false),
                 const SizedBox(height: 8),
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: TextFormField(
-                                controller: _nameController,
-                                decoration: InputDecoration(
-                                  hintText: 'Name',
-                                  hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              flex: 3,
-                              child: TextFormField(
-                                controller: _emailController,
-                                keyboardType: TextInputType.emailAddress,
-                                decoration: InputDecoration(
-                                  hintText: 'ronald@nugsoft.com',
-                                  hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-                                ),
-                                onChanged: _searchUsers,
-                                onFieldSubmitted: (value) {
-                                  _addAttendeeEmail(value, name: _nameController.text);
-                                  _nameController.clear();
-                                },
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Add person',
-                              icon: const Icon(Icons.add, color: AppColors.orange),
-                              onPressed: () {
-                                _addAttendeeEmail(_emailController.text, name: _nameController.text);
-                                _nameController.clear();
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        if (_attendees.isNotEmpty)
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: _attendees.map((a) {
-                              return Chip(
-                                label: Text(a['name'] ?? a['email'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 12)),
-                                backgroundColor: AppColors.navy,
-                                deleteIcon: const Icon(Icons.close, size: 16, color: Colors.white),
-                                onDeleted: () => _removeAttendeeEmail(a['email']!),
-                              );
-                            }).toList(),
-                          ),
-                      ],
-                    ),
-                    if (_showSearchResults && _searchResults.isNotEmpty)
-                      Positioned(
-                        top: 56,
-                        left: 0,
-                        right: 0,
-                        child: Material(
-                          elevation: 24,
-                          borderRadius: BorderRadius.circular(8),
-                          color: Colors.transparent,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              border: Border.all(color: Colors.grey.shade300),
-                              borderRadius: BorderRadius.circular(8),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.4),
-                                  blurRadius: 24,
-                                  offset: const Offset(0, 12),
-                                ),
-                              ],
-                            ),
-                            constraints: const BoxConstraints(maxHeight: 200),
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: _searchResults.length,
-                              itemBuilder: (context, index) {
-                                final user = _searchResults[index];
-                                return ListTile(
-                                  title: Text(user['name'] ?? 'Unknown'),
-                                  subtitle: Text(user['email']),
-                                  onTap: () {
-                                    _addAttendeeEmail(user['email'], name: user['name']);
-                                    _nameController.clear();
-                                    setState(() => _showSearchResults = false);
-                                  },
-                                );
-                              },
-                            ),
+                CompositedTransformTarget(
+                  link: _layerLink,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextFormField(
+                          controller: _nameController,
+                          decoration: InputDecoration(
+                            hintText: 'Name',
+                            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
                           ),
                         ),
                       ),
-                  ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 3,
+                        child: TextFormField(
+                          controller: _emailController,
+                          focusNode: _emailFocusNode,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: InputDecoration(
+                            hintText: 'ronald@nugsoft.com',
+                            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+                          ),
+                          onChanged: _searchUsers,
+                          onFieldSubmitted: (value) {
+                            _addAttendeeEmail(value, name: _nameController.text);
+                            _nameController.clear();
+                          },
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Add person',
+                        icon: const Icon(Icons.add, color: AppColors.orange),
+                        onPressed: () {
+                          _addAttendeeEmail(_emailController.text, name: _nameController.text);
+                          _nameController.clear();
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-                                
+              
+                const SizedBox(height: 8),
+                if (_attendees.isNotEmpty)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _attendees.map((a) {
+                      return Chip(
+                        label: Text(a['name'] ?? a['email'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                        backgroundColor: AppColors.navy,
+                        deleteIcon: const Icon(Icons.close, size: 16, color: Colors.white),
+                        onDeleted: () => _removeAttendeeEmail(a['email']!),
+                      );
+                    }).toList(),
+                  ),
+
                 const SizedBox(height: 20),
 
                 // LOCATION
@@ -759,11 +856,11 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                   ),
                 if (_locationType == 'online')
                   TextFormField(
+                    controller: _onlineLinkController,
                     decoration: InputDecoration(
                       hintText: 'Paste/enter the link to the meeting here',
                       hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
                     ),
-                    onChanged: (value) => setState(() => _onlineLink = value),
                     validator: (v) => _locationType == 'online' && (v == null || v.trim().isEmpty)
                         ? 'Meeting link is required'
                         : null,
@@ -777,7 +874,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                   spacing: 8,
                   children: List.generate(_reminders.length, (index) {
                     final reminder = _reminders[index];
-                    final mins = reminder['minutes_before'] as int;
+                    final mins = _reminderMinutes(reminder);
                     String label;
                     if (mins % 1440 == 0 && mins >= 1440) {
                       final days = mins ~/ 1440;
@@ -790,7 +887,7 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                     }
 
                     return GestureDetector(
-                      onTap: _reminders.length > 1 ? () => _removeReminder(index) : null,
+                      onTap: () => _removeReminder(index),
                       child: Chip(
                         label: Text(label),
                         backgroundColor: AppColors.orange.withOpacity(0.12),
@@ -798,8 +895,8 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                           side: const BorderSide(color: AppColors.orange, width: 1.2),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        deleteIcon: _reminders.length > 1 ? const Icon(Icons.close, size: 16) : null,
-                        onDeleted: _reminders.length > 1 ? () => _removeReminder(index) : null,
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: () => _removeReminder(index),
                       ),
                     );
                   }),
@@ -836,8 +933,8 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
                               valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                             ),
                           )
-                        : const Text(
-                            'Save appointment',
+                        : Text(
+                            widget.editAppointmentId == null ? 'Save appointment' : 'Save changes',
                             style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
                           ),
                   ),
@@ -853,10 +950,11 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
         onTap: (index) {
           if (index == 0) Navigator.pushNamed(context, '/dashboard');
           if (index == 1) Navigator.pushNamed(context, '/diary');
-          if (index == 2) Navigator.pushNamed(context, '/reports');
+          if (index == 2 && _canExportReports) Navigator.pushNamed(context, '/reports');
           if (index == 3) return;
         },
         onAddTap: () => Navigator.pushNamed(context, '/new-appointment'),
+        showReports: _canExportReports,
       ),
     );
   }

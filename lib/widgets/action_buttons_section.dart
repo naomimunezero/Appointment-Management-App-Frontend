@@ -2,16 +2,16 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
 class ActionButtonsSection extends StatelessWidget {
-  final VoidCallback onRecordOutcome;
-  final VoidCallback onEdit;
-  final VoidCallback onReschedule;
+  final VoidCallback? onRecordOutcome;
+  final VoidCallback? onEdit;
+  final VoidCallback? onReschedule;
   final bool isLoading;
 
   const ActionButtonsSection({
     super.key,
-    required this.onRecordOutcome,
-    required this.onEdit,
-    required this.onReschedule,
+    this.onRecordOutcome,
+    this.onEdit,
+    this.onReschedule,
     this.isLoading = false,
   });
 
@@ -26,7 +26,7 @@ class ActionButtonsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ElevatedButton.icon(
+          if (onRecordOutcome != null) ElevatedButton.icon(
             onPressed: isLoading ? null : onRecordOutcome,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.navy,
@@ -45,11 +45,11 @@ class ActionButtonsSection extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
+          if (onRecordOutcome != null && (onEdit != null || onReschedule != null)) const SizedBox(height: 12),
+          if (onEdit != null || onReschedule != null) Row(
             children: [
               Expanded(
-                child: OutlinedButton.icon(
+                child: onEdit == null ? const SizedBox.shrink() : OutlinedButton.icon(
                   onPressed: isLoading ? null : onEdit,
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: AppColors.navy, width: 1.5),
@@ -64,7 +64,7 @@ class ActionButtonsSection extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: OutlinedButton.icon(
+                child: onReschedule == null ? const SizedBox.shrink() : OutlinedButton.icon(
                   onPressed: isLoading ? null : onReschedule,
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: AppColors.navy, width: 1.5),
