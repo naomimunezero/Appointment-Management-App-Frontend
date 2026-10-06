@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../widgets/bottom_nav_bar.dart';
@@ -25,6 +24,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
   Map<String, List<Map<String, dynamic>>> _appointmentsByDate = {};
 
   final ScrollController _scrollController = ScrollController();
+  late final PageController _calendarController;
 
   @override
   void initState() {
@@ -35,6 +35,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
     ));
     _selectedDate = DateTime.now();
     _weekStart = startOfWeek(_selectedDate);
+    _calendarController = PageController(initialPage: 1000, viewportFraction: 1 / 7);
     _loadPermissions();
     _loadWeek();
   }
@@ -89,6 +90,18 @@ class _DiaryScreenState extends State<DiaryScreen> {
     }
   }
 
+  Future<void> _refreshToToday() async {
+    final today = DateTime.now();
+    setState(() {
+      _selectedDate = today;
+      _weekStart = startOfWeek(today);
+    });
+    if (_calendarController.hasClients) {
+      _calendarController.jumpToPage(1000); // page 1000 = today
+    }
+    await _loadWeek();
+  }
+
   Future<void> _openAppointmentDetails(int appointmentId) async {
     await Navigator.pushNamed(
       context,
@@ -96,6 +109,13 @@ class _DiaryScreenState extends State<DiaryScreen> {
       arguments: {'appointmentId': appointmentId},
     );
     if (mounted) _loadWeek();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _calendarController.dispose();
+    super.dispose();
   }
 
   @override
@@ -162,13 +182,21 @@ class _DiaryScreenState extends State<DiaryScreen> {
       // BODY
       body: SafeArea(
         top: false,
-        child: _loading
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
-            : RefreshIndicator(
-                onRefresh: _loadWeek,
-                child: _buildDayList(),
+        child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                    child: _buildCalendarStrip(),
+                  ),
+                  Expanded(
+                    child: RefreshIndicator(
+                      onRefresh: _refreshToToday,
+                      child: _loading
+                          ? const Center(child: CircularProgressIndicator())
+                          : _buildDayList(),
+                    ),
+                  ),
+                ],
               ),
       ),
 
@@ -225,107 +253,102 @@ class _DiaryScreenState extends State<DiaryScreen> {
     );
 
     if (picked != null) {
+      final now = DateTime.now();
+      final page = 1000 + DateTime(picked.year, picked.month, picked.day)
+        .difference(DateTime(now.year, now.month, now.day)).inDays;
       setState(() {
         _selectedDate = picked;
         _weekStart = startOfWeek(picked);
       });
-
+      _calendarController.jumpToPage(page);
       _loadWeek();
     }
   }
 
-  Widget _buildDayList() {
-    // Show only appointments for the selected date.
-    final dateKey = _dateKey(_selectedDate);
+  Widget _buildCalendarStrip() {
+    return SizedBox(
+          height: 78,
+          child: PageView.builder(
+            controller: _calendarController,
+            pageSnapping: false,
+            onPageChanged: (page) {
+              final today = DateTime.now();
+              final centerDate = DateTime(today.year, today.month, today.day).add(Duration(days: page - 1000));
+              final start = startOfWeek(centerDate);
+              if (dateKey(start) != dateKey(_weekStart)) {
+               setState(() => _weekStart = start);
+               _loadWeek();
+              }
+            },
+            itemBuilder: (context, page) {
+              final today = DateTime.now();
+                final date = DateTime(today.year, today.month, today.day).add(Duration(days: page - 1000));
+                  final selected = dateKey(date) == dateKey(_selectedDate);
+                  final hasAppointments = (_appointmentsByDate[dateKey(date)] ?? []).isNotEmpty;
+                  return Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () => setState(() => _selectedDate = date),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: selected ? AppColors.orange : Colors.white,
+                            border: Border.all(color: selected ? AppColors.orange : const Color(0xFFE1E6EE)),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                            Text(weekdayShort[date.weekday - 1], style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: selected ? Colors.white : Colors.blueGrey)),
+                            const SizedBox(height: 4),
+                            Text('${date.day}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: selected ? Colors.white : AppColors.navy)),
+                            const SizedBox(height: 2),
+                            Icon(Icons.circle, size: 4, color: hasAppointments ? (selected ? Colors.white : AppColors.teal) : Colors.transparent),
+                          ]),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              );
 
-    final appointments =
-        _appointmentsByDate[dateKey] ?? [];
+  }
 
-    if (appointments.isEmpty) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          const SizedBox(height: 80),
+  Widget _buildDayList() => ListView(
+    controller: _scrollController,
+    physics: const AlwaysScrollableScrollPhysics(),
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+    children: _buildUpcomingDaySections(),
+  );
 
-          Center(
-            child: Column(
-              children: [
-                Icon(
-                  Icons.calendar_today,
-                  size: 48,
-                  color: Colors.grey[300],
-                ),
-
-                const SizedBox(height: 16),
-
-                Text(
-                  'No appointments on '
-                  '${_formatDateForDisplay(_selectedDate)}',
-                  style: TextStyle(
-                    color: Colors.grey[500],
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
+  List<Widget> _buildUpcomingDaySections() {
+    final result = <Widget>[];
+    final today = DateTime.now();
+    final todayKey = _dateKey(today);
+    for (var date = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+        !date.isAfter(_weekStart.add(const Duration(days: 6)));
+        date = date.add(const Duration(days: 1))) {
+      final appointments = _appointmentsByDate[_dateKey(date)] ?? [];
+      if (appointments.isEmpty) continue;
+      final heading = _dateKey(date) == todayKey ? 'TODAY · ${formatDayHeader(date)}' : formatDayHeader(date);
+      result.add(Padding(
+        padding: const EdgeInsets.only(top: 12, bottom: 10),
+        child: Text(heading, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.grey[600], letterSpacing: 0.5)),
+      ));
+      result.addAll(appointments.map((a) => DiaryAppointmentCard(
+        appointment: a,
+        onTap: () {
+          final id = int.tryParse('${a['id'] ?? ''}');
+          if (id != null) _openAppointmentDetails(id);
+        },
+      )));
     }
-
-    return ListView(
-      controller: _scrollController,
-      physics: const AlwaysScrollableScrollPhysics(),
-
-      padding: const EdgeInsets.fromLTRB(
-        16,
-        4,
-        16,
-        100,
-      ),
-
-      children: [
-        Container(
-          margin: const EdgeInsets.only(bottom: 8),
-
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(
-                  top: 12,
-                  bottom: 10,
-                ),
-
-                child: Text(
-                  formatDayHeader(_selectedDate),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.grey[600],
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-
-              ...appointments.map(
-                (a) => DiaryAppointmentCard(
-                  appointment: a,
-                  onTap: () {
-                    final appointmentId =
-                        a['id'] as int?;
-
-                    if (appointmentId != null) {
-                      _openAppointmentDetails(appointmentId);
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+    if (result.isEmpty) {
+      result.add(Padding(
+        padding: const EdgeInsets.only(top: 52),
+        child: Center(child: Text('No upcoming appointments from ${_formatDateForDisplay(_selectedDate)}', style: TextStyle(color: Colors.grey[600]))),
+      ));
+    }
+    return result;
   }
 
   String _dateKey(DateTime date) {

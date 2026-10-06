@@ -341,6 +341,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               appointmentDate: appointmentDate,
                               startTime: startTime,
                               location: location,
+                              onViewDetails: appointmentId == null
+                                  ? null
+                                  : () async {
+                                      await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => AppointmentDetailsScreen(
+                                            appointmentId: appointmentId,
+                                          ),
+                                        ),
+                                      );
+                                      if (mounted) await _load();
+                                    },
                             );
                           },
                         ),
@@ -415,6 +428,7 @@ class _NotificationCard extends StatelessWidget {
   final String? appointmentDate;    // ADD
   final String? startTime;          // ADD
   final String? location; 
+  final Future<void> Function()? onViewDetails;
 
   const _NotificationCard({
     required this.color,
@@ -428,6 +442,7 @@ class _NotificationCard extends StatelessWidget {
     this.appointmentDate,            // ADD
     this.startTime,                  // ADD
     this.location,
+    this.onViewDetails,
   });
 
   @override
@@ -530,12 +545,7 @@ class _NotificationCard extends StatelessWidget {
                                 const SizedBox.shrink(),
                               if (appointmentId != null)
                                 GestureDetector(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(builder: (_) => AppointmentDetailsScreen(appointmentId: appointmentId!)),
-                                    );
-                                  },
+                                  onTap: onViewDetails,
                                   child: Text(
                                     'View details →',
                                     style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12),
