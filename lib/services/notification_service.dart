@@ -8,7 +8,7 @@ class NotificationService {
   static Future<void> init() async {
     tzdata.initializeTimeZones();
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings('ic_notification');
     const iosSettings = DarwinInitializationSettings();
     const settings = InitializationSettings(android: androidSettings, iOS: iosSettings);
 
@@ -27,6 +27,7 @@ class NotificationService {
     required String title,
     required String body,
     required DateTime scheduledAt,
+    Map<String, dynamic>? payload,
   }) async {
     if (scheduledAt.isBefore(DateTime.now())) return; // don't schedule past times
 
@@ -36,6 +37,7 @@ class NotificationService {
       channelDescription: 'Reminders for upcoming appointments',
       importance: Importance.high,
       priority: Priority.high,
+      icon: 'ic_notification',
     );
     const details = NotificationDetails(android: androidDetails, iOS: DarwinNotificationDetails());
 
@@ -47,6 +49,7 @@ class NotificationService {
       details,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      payload: payload?.toString(),
     );
   }
 

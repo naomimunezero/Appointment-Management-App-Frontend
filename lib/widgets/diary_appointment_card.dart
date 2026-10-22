@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../utils/diary_utils.dart';
+import '../utils/date_time_utils.dart';
 import '../utils/status_utils.dart';
 
 /// A single appointment row in the diary list — time on the left,
@@ -16,7 +17,10 @@ class DiaryAppointmentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = (appointment['status'] ?? 'upcoming').toString();
     final color = statusColor(status);
-    final timeParts = splitTime(appointment['start_time'] as String?);
+    final formattedTime = DateTimeUtils.formatTime(
+      appointment['start_time']?.toString(),
+    );
+    final timeParts = splitTime(formattedTime);
 
     final subtitle = _subtitle();
 

@@ -169,7 +169,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
-                  Icons.calendar_today,
+                  Icons.filter_alt_outlined,
                   color: Colors.white,
                   size: 20,
                 ),

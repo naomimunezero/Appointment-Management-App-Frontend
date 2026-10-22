@@ -9,10 +9,8 @@ class StatCardsRow extends StatelessWidget {
   final int held;
   final int missed;
   final int actionsDue;
-  final VoidCallback? onUpcomingTap;
-  final VoidCallback? onHeldTap;
-  final VoidCallback? onMissedTap;
-  final VoidCallback? onActionsTap;
+  final String selectedCategory;
+  final ValueChanged<String> onCategoryChanged;
 
   const StatCardsRow({
     super.key,
@@ -20,23 +18,45 @@ class StatCardsRow extends StatelessWidget {
     required this.held,
     required this.missed,
     required this.actionsDue,
-    this.onUpcomingTap,
-    this.onHeldTap,
-    this.onMissedTap,
-    this.onActionsTap,
+    this.selectedCategory = 'upcoming',
+    required this.onCategoryChanged,
   });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        StatCard(number: '$upcoming', label: 'UPCOMING', color: AppColors.navy, onTap: onUpcomingTap),
+        StatCard(
+          number: '$upcoming',
+          label: 'UPCOMING',
+          color: AppColors.navy,
+          onTap: () => onCategoryChanged('upcoming'),
+          isSelected: selectedCategory == 'upcoming',
+        ),
         const SizedBox(width: 10),
-        StatCard(number: '$held', label: 'HELD', color: AppColors.green, onTap: onHeldTap),
+        StatCard(
+          number: '$held',
+          label: 'HELD',
+          color: AppColors.green,
+          onTap: () => onCategoryChanged('held'),
+          isSelected: selectedCategory == 'held',
+        ),
         const SizedBox(width: 10),
-        StatCard(number: '$missed', label: 'MISSED', color: AppColors.red, onTap: onMissedTap),
+        StatCard(
+          number: '$missed',
+          label: 'MISSED',
+          color: AppColors.red,
+          onTap: () => onCategoryChanged('missed'),
+          isSelected: selectedCategory == 'missed',
+        ),
         const SizedBox(width: 10),
-        StatCard(number: '$actionsDue', label: 'ACTIONS DUE', color: AppColors.orange, onTap: onActionsTap),
+        StatCard(
+          number: '$actionsDue',
+          label: 'ACTIONS DUE',
+          color: AppColors.orange,
+          onTap: () => onCategoryChanged('actions'),
+          isSelected: selectedCategory == 'actions',
+        ),
       ],
     );
   }
@@ -47,8 +67,16 @@ class StatCard extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback? onTap;
+  final bool isSelected;
 
-  const StatCard({super.key, required this.number, required this.label, required this.color, this.onTap});
+  const StatCard({
+    super.key,
+    required this.number,
+    required this.label,
+    required this.color,
+    this.onTap,
+    this.isSelected = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +91,10 @@ class StatCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isSelected ? color : Colors.transparent,
+                width: 2.5,
+              ),
               boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)],
             ),
             child: Column(

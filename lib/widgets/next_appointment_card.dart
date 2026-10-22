@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../utils/dashboard_utils.dart';
@@ -24,7 +25,10 @@ class NextAppointmentCard extends StatelessWidget {
   }
 
   Widget _buildAppointmentState(Map<String, dynamic> next) {
-    final start = parseTimeToday(next['start_time'] as String?);
+    final start = parseAppointmentDateTime(
+      (next['appointment_date'] ?? next['date'])?.toString(),
+      next['start_time']?.toString(),
+    );
     final durationMinutes = next['duration_minutes'] is int
         ? next['duration_minutes'] as int
         : int.tryParse('${next['duration_minutes'] ?? ''}') ?? 0;
@@ -120,35 +124,71 @@ class NextAppointmentCard extends StatelessWidget {
   }
 }
 
-/// The small "42 MIN" progress ring. Private to this file since it's
-/// only ever used inside the appointment card.
-/// Fills up as the appointment approaches, based on a 4-hour window
-/// (empty at 4+ hours away, full right at start time).
-class _CountdownRing extends StatelessWidget {
+/// Counts down to the appointment. The ring is hidden beyond 24 hours,
+/// becomes full at 24 hours, then empties as the appointment approaches.
+class _CountdownRing extends StatefulWidget {
   final DateTime? appointmentStart;
-  static const _lookAheadMinutes = 240;
 
   const _CountdownRing({required this.appointmentStart});
 
   @override
-  Widget build(BuildContext context) {
-    final minutesUntil =
-        appointmentStart == null ? -1 : appointmentStart!.difference(DateTime.now()).inMinutes;
+  State<_CountdownRing> createState() => _CountdownRingState();
+}
 
-    double progress;
+class _CountdownRingState extends State<_CountdownRing> {
+  static const _window = Duration(hours: 24);
+  late DateTime _now;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _now = DateTime.now();
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      final now = DateTime.now();
+      if (mounted) setState(() => _now = now);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _CountdownRing oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.appointmentStart != widget.appointmentStart) {
+      _now = DateTime.now();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final start = widget.appointmentStart;
+    final remaining = start?.difference(_now);
+    final remainingHours = remaining == null
+        ? null
+        : remaining.inSeconds / Duration.secondsPerHour;
+    final ringProgress = remaining == null || remaining > _window
+        ? 0.0
+        : (remaining.inSeconds / _window.inSeconds).clamp(0.0, 1.0).toDouble();
     String label;
 
-    if (appointmentStart == null) {
-      progress = 0;
-      label = 'TODAY';
-    } else if (minutesUntil <= 0) {
-      progress = 1;
+    if (remaining == null) {
+      label = '--';
+    } else if (remaining.isNegative || remaining == Duration.zero) {
       label = 'NOW';
+    } else if (remaining > _window) {
+      final days = (remaining.inSeconds / Duration.secondsPerDay).ceil();
+      label = '$days\n${days == 1 ? 'DAY' : 'DAYS'}';
+    } else if (remainingHours! >= 1) {
+      final hours = remainingHours.roundToDouble();
+      label = '${hours == hours.roundToDouble() ? hours.toInt() : hours}\n${hours == 1 ? 'HR' : 'HRS'}';
     } else {
-      progress = 1 - (minutesUntil.clamp(0, _lookAheadMinutes) / _lookAheadMinutes);
-      label = minutesUntil >= 60
-          ? '${(minutesUntil / 60).floor()}H ${minutesUntil % 60}M'
-          : '$minutesUntil\nMIN';
+      final halfHours = (remainingHours! * 2).ceil() / 2;
+      label = '$halfHours\n${halfHours == 1 ? 'HR' : 'HRS'}';
     }
 
     return SizedBox(
@@ -161,7 +201,7 @@ class _CountdownRing extends StatelessWidget {
             width: 60,
             height: 60,
             child: CircularProgressIndicator(
-              value: progress,
+              value: ringProgress,
               strokeWidth: 3,
               backgroundColor: Colors.white.withValues(alpha: 0.25),
               valueColor: const AlwaysStoppedAnimation<Color>(AppColors.orange),

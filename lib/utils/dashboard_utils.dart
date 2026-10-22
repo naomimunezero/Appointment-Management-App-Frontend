@@ -124,6 +124,32 @@ DateTime? parseTimeToday(String? timeStr) {
   return DateTime(now.year, now.month, now.day, hour, minute);
 }
 
+/// Combines an appointment's calendar date and time into a local DateTime.
+/// Supports 12-hour values ("10:00 AM") and 24-hour values ("10:00" or
+/// "10:00:00").
+DateTime? parseAppointmentDateTime(String? dateStr, String? timeStr) {
+  if (dateStr == null || timeStr == null) return null;
+  final date = DateTime.tryParse(dateStr.trim());
+  if (date == null) return null;
+
+  final match = RegExp(
+    r'^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$',
+    caseSensitive: false,
+  ).firstMatch(timeStr.trim());
+  if (match == null) return null;
+
+  var hour = int.parse(match.group(1)!);
+  final minute = int.parse(match.group(2)!);
+  final period = match.group(3)?.toUpperCase();
+  if (minute > 59 || hour > (period == null ? 23 : 12) || (period != null && hour == 0)) {
+    return null;
+  }
+  if (period == 'PM' && hour != 12) hour += 12;
+  if (period == 'AM' && hour == 12) hour = 0;
+
+  return DateTime(date.year, date.month, date.day, hour, minute);
+}
+
 /// Returns "Good morning" / "Good afternoon" / "Good evening" based on
 /// the device's current time.
 /// Boundaries: before 12pm = morning, 12pm–5pm = afternoon, after 5pm = evening.

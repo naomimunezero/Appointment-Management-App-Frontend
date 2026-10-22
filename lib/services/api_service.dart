@@ -283,6 +283,106 @@ class ApiService {
     return jsonDecode(response.body);
   }
 
+  static Future<Map<String, dynamic>> getReminderDefaults() async {
+    try {
+      final token = await _getToken();
+      final response = await http.get(
+        Uri.parse('$baseUrl/reminders/defaults'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
+      final data = jsonDecode(response.body);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return {'success': false, 'message': 'Could not load default reminders'};
+      }
+      final raw = data is List
+          ? data
+          : data is Map
+              ? (data['reminders'] ?? data['defaults'] ?? data['data'] ?? [])
+              : [];
+      final reminders = raw is List
+          ? raw.whereType<Map>().map((item) => <String, dynamic>{
+                'minutes_before': item['minutes_before'] is num
+                    ? (item['minutes_before'] as num).toInt()
+                    : int.tryParse(item['minutes_before']?.toString() ?? '') ?? 0,
+              }).where((item) => (item['minutes_before'] as int) > 0).toList()
+          : <Map<String, dynamic>>[];
+      return {'success': true, 'reminders': reminders};
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  static Future<Map<String, dynamic>> saveReminderDefaults(
+    List<Map<String, dynamic>> reminders,
+  ) async {
+    try {
+      final token = await _getToken();
+      final response = await http.put(
+        Uri.parse('$baseUrl/reminders/defaults'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'reminders': reminders}),
+      ).timeout(const Duration(seconds: 10));
+      final data = jsonDecode(response.body);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'message': _apiErrorMessage(data, 'Could not save default reminders')};
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  /// Loads the notification preferences for the authenticated user.
+  static Future<Map<String, dynamic>> getNotificationSettings() async {
+    try {
+      final token = await _getToken();
+      final response = await http.get(
+        Uri.parse('$baseUrl/notification-settings'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
+      final decoded = jsonDecode(response.body);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return {'success': false, 'message': _apiErrorMessage(decoded, 'Could not load notification settings')};
+      }
+      final data = decoded is Map ? Map<String, dynamic>.from(decoded) : <String, dynamic>{};
+      final raw = data['settings'] ?? data['notification_settings'] ?? data['data'] ?? data;
+      return {'success': true, 'settings': raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{}};
+    } catch (e) {
+      return {'success': false, 'message': 'Could not load notification settings: $e'};
+    }
+  }
+
+  /// Updates one or more notification preferences.
+  static Future<Map<String, dynamic>> updateNotificationSettings(
+    Map<String, dynamic> settings,
+  ) async {
+    try {
+      final token = await _getToken();
+      final response = await http.put(
+        Uri.parse('$baseUrl/notification-settings'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(settings),
+      ).timeout(const Duration(seconds: 10));
+      final decoded = jsonDecode(response.body);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = decoded is Map ? Map<String, dynamic>.from(decoded) : <String, dynamic>{};
+        final raw = data['settings'] ?? data['notification_settings'] ?? data['data'];
+        return {'success': true, if (raw is Map) 'settings': Map<String, dynamic>.from(raw)};
+      }
+      return {'success': false, 'message': _apiErrorMessage(decoded, 'Could not save notification settings')};
+    } catch (e) {
+      return {'success': false, 'message': 'Could not save notification settings: $e'};
+    }
+  }
+
   /// Loads the report for the inclusive date range. The API should return:
   /// {
   ///   "appointments_held": 12, "people_met": 15,
@@ -842,4 +942,19 @@ class ApiService {
       return {'success': false, 'message': 'Network error: ${e.toString()}'};
     }
   }
+
+  static Future<void> registerDeviceToken(String fcmToken) async {
+    final token = await _getToken();
+    if (token == null) return;
+    await http.post(
+      Uri.parse('$baseUrl/device-tokens'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'token': fcmToken, 'platform': 'android'}),
+    );
+  }
+
 }
