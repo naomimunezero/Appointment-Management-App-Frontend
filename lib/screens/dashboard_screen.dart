@@ -62,9 +62,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadUserName() async {
     final name = await ApiService.getUserName();
-    if (name != null && name.isNotEmpty) {
+    if (mounted && name != null && name.isNotEmpty) {
       setState(() => _userName = name);
     }
+  }
+
+  Future<void> _openProfile() async {
+    await Navigator.pushNamed(context, '/profile');
+    if (mounted) _loadUserName();
   }
 
   Future<void> _loadSummary() async {
@@ -119,7 +124,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           NextAppointmentCard(
                             appointment: next,
                             onTap: next != null && next['id'] != null
-                                ? () => _openAppointmentDetails(next['id'] as int)
+                                ? () =>
+                                      _openAppointmentDetails(next['id'] as int)
                                 : null,
                           ),
                           const SizedBox(height: 20),
@@ -129,7 +135,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             missed: _summary?['missed'] ?? 0,
                             actionsDue: _summary?['action_points_pending'] ?? 0,
                             selectedCategory: _selectedCategory,
-                            onCategoryChanged: (category) => setState(() => _selectedCategory = category),
+                            onCategoryChanged: (category) =>
+                                setState(() => _selectedCategory = category),
                           ),
                           const SizedBox(height: 16),
                           _buildCategoryAppointments(),
@@ -146,7 +153,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         onTap: (index) {
           if (index == 0) return;
           if (index == 1) Navigator.pushNamed(context, '/diary');
-          if (index == 2 && _canExportReports) Navigator.pushNamed(context, '/reports');
+          if (index == 2 && _canExportReports)
+            Navigator.pushNamed(context, '/reports');
           if (index == 3) Navigator.pushNamed(context, '/settings');
         },
         onAddTap: _canManageAppointments ? _openNewAppointment : null,
@@ -158,7 +166,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildHeader() {
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(20, 16 + MediaQuery.of(context).padding.top, 20, 24),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        16 + MediaQuery.of(context).padding.top,
+        20,
+        24,
+      ),
       decoration: const BoxDecoration(
         color: AppColors.navy,
         //borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
@@ -169,11 +182,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('${greetingForNow()}, $_userName',
-                  style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+              Text(
+                '${greetingForNow()}, $_userName',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
               const SizedBox(height: 4),
-              Text('${_summary?['upcoming'] ?? 0} appointments today',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
+              Text(
+                '${_summary?['upcoming'] ?? 0} appointments today',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
             ],
           ),
           Row(
@@ -182,16 +203,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onTap: () => Navigator.pushNamed(context, '/notifications'),
                 child: Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), shape: BoxShape.circle),
-                  child: const Icon(Icons.notifications_outlined, color: Colors.white, size: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.notifications_outlined,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: AppColors.orange,
-                child: Text(_initials(_userName),
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+              Semantics(
+                button: true,
+                label: 'Open profile',
+                child: InkWell(
+                  onTap: _openProfile,
+                  customBorder: const CircleBorder(),
+                  child: CircleAvatar(
+                    radius: 20,
+                    backgroundColor: AppColors.orange,
+                    child: Text(
+                      _initials(_userName),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
@@ -202,21 +244,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildCategoryAppointments() {
     final category = _selectedCategory;
-    final List<Map<String, dynamic>> appointments = _extractCategoryAppointments(category);
+    final List<Map<String, dynamic>> appointments =
+        _extractCategoryAppointments(category);
 
     // Sort appointments based on category
     if (category == 'held') {
       // Sort by held_at (recording date) latest first
       appointments.sort((a, b) {
-        final heldAtA = a['held_at'] ?? a['appointment_date'] ?? a['date'] ?? '';
-        final heldAtB = b['held_at'] ?? b['appointment_date'] ?? b['date'] ?? '';
+        final heldAtA =
+            a['held_at'] ?? a['appointment_date'] ?? a['date'] ?? '';
+        final heldAtB =
+            b['held_at'] ?? b['appointment_date'] ?? b['date'] ?? '';
         return heldAtB.toString().compareTo(heldAtA.toString());
       });
     } else if (category == 'missed') {
       // Sort by appointment_date latest first
       appointments.sort((a, b) {
-        final dateA = a['appointment_date'] ?? a['date'] ?? a['scheduled_at'] ?? '';
-        final dateB = b['appointment_date'] ?? b['date'] ?? b['scheduled_at'] ?? '';
+        final dateA =
+            a['appointment_date'] ?? a['date'] ?? a['scheduled_at'] ?? '';
+        final dateB =
+            b['appointment_date'] ?? b['date'] ?? b['scheduled_at'] ?? '';
         return dateB.toString().compareTo(dateA.toString());
       });
     } else if (category == 'actions') {
@@ -228,7 +275,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
     }
 
-    final displayLimit = appointments.length > 5 ? appointments.sublist(0, 5) : appointments;
+    final displayLimit = appointments.length > 5
+        ? appointments.sublist(0, 5)
+        : appointments;
 
     // Get category title and button text
     String categoryTitle;
@@ -265,7 +314,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6,
+            ),
           ],
         ),
         child: Column(
@@ -283,10 +335,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 12),
             Text(
               'No ${category.toLowerCase()}',
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey[400],
-              ),
+              style: TextStyle(fontSize: 13, color: Colors.grey[400]),
             ),
           ],
         ),
@@ -300,7 +349,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)
+          BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6),
         ],
       ),
       child: Column(
@@ -322,83 +371,116 @@ class _DashboardScreenState extends State<DashboardScreen> {
             // For regular appointments, use id
             final id = category == 'actions'
                 ? (item['appointment_id'] ?? item['appointmentId'])
-                : (item['id'] ?? item['appointment_id'] ?? item['appointmentId']);
+                : (item['id'] ??
+                      item['appointment_id'] ??
+                      item['appointmentId']);
             final appointmentId = int.tryParse(id?.toString() ?? '');
-            final title = item['purpose'] ?? item['title'] ?? item['description'] ?? 'Appointment';
-            final dateValue = item['appointment_date'] ?? item['date'] ?? item['due_date'] ?? 'No date';
+            final title =
+                item['purpose'] ??
+                item['title'] ??
+                item['description'] ??
+                'Appointment';
+            final dateValue =
+                item['appointment_date'] ??
+                item['date'] ??
+                item['due_date'] ??
+                'No date';
             final timeValue = item['start_time'] ?? item['time'] ?? '';
 
             // Format subtitle based on category
             String subtitle;
             if (category == 'held' && item['held_at'] != null) {
               try {
-                subtitle = 'Held on ${DateTimeUtils.formatServerTimestamp(item['held_at'].toString())}';
+                subtitle =
+                    'Held on ${DateTimeUtils.formatServerTimestamp(item['held_at'].toString())}';
               } catch (e) {
-                subtitle = _formatAppointmentDateTime(dateValue.toString(), timeValue.toString());
+                subtitle = _formatAppointmentDateTime(
+                  dateValue.toString(),
+                  timeValue.toString(),
+                );
               }
             } else if (category == 'actions') {
-              subtitle = (item['due_date'] ?? item['date'] ?? 'No due date').toString();
+              subtitle = (item['due_date'] ?? item['date'] ?? 'No due date')
+                  .toString();
             } else {
-              subtitle = _formatAppointmentDateTime(dateValue.toString(), timeValue.toString());
+              subtitle = _formatAppointmentDateTime(
+                dateValue.toString(),
+                timeValue.toString(),
+              );
             }
 
             return Container(
-                  padding: const EdgeInsets.all(14),
-                  margin: const EdgeInsets.only(bottom: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFFEAEAEA)),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4),
-                    ],
+              padding: const EdgeInsets.all(14),
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFEAEAEA)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 4,
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(title.toString(), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                            const SizedBox(height: 2),
-                            Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                          ],
-                        ),
-                      ),
-
-                      ElevatedButton(
-                        onPressed: appointmentId == null
-                            ? null
-                            : () {
-                                if (category == 'missed') {
-                                  _rescheduleAppointment(appointmentId);
-                                } else {
-                                  _openAppointmentDetails(appointmentId);
-                                }
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: buttonColor,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 15,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: Text(
-                          buttonText,
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title.toString(),
                           style: const TextStyle(
-                            color: Colors.white,
                             fontWeight: FontWeight.w700,
-                            fontSize: 10,
+                            fontSize: 14,
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+
+                  ElevatedButton(
+                    onPressed: appointmentId == null
+                        ? null
+                        : () {
+                            if (category == 'missed') {
+                              _rescheduleAppointment(appointmentId);
+                            } else {
+                              _openAppointmentDetails(appointmentId);
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: buttonColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 15,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      buttonText,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             );
           }).toList(),
         ],
@@ -417,12 +499,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // Turns "Vincent Mugisha" into "VM". Falls back to "?" if there's
-  
+
   String _initials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
     if (parts.isEmpty || name == 'there') return '?';
     if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
-    return (parts.first.substring(0, 1) + parts.last.substring(0, 1)).toUpperCase();
+    return (parts.first.substring(0, 1) + parts.last.substring(0, 1))
+        .toUpperCase();
   }
 
   String _formatAppointmentDateTime(String dateValue, String timeValue) {
@@ -439,7 +526,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (category == 'actions') {
       final source = summary['action_points'] ?? summary['action_points_due'];
       if (source is List) {
-        return source.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        return source
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
       }
       return const [];
     }
@@ -457,7 +547,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     for (final key in keys) {
       final value = summary[key];
       if (value is List) {
-        return value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        return value
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
       }
       if (value is Map) {
         final extracted = extractListFromDashboard(value);
@@ -469,7 +562,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     for (final value in summary.values) {
       if (value is List) {
-        final matches = value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        final matches = value
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
         if (matches.isNotEmpty && matches.first.containsKey('status')) {
           return matches;
         }

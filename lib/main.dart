@@ -13,7 +13,9 @@ import 'screens/invite_assistant_screen.dart';
 import 'screens/pending_invite_screen.dart';
 import 'screens/assistant_details_screen.dart';
 import 'screens/new_appointment_screen.dart';
-import 'screens/reports_screen.dart';
+import 'screens/reports_center_screen.dart';
+import 'screens/users_access_screen.dart';
+import 'screens/profile_screen.dart';
 import 'screens/appointment_details_screen.dart';
 import 'screens/record_outcome_screen.dart';
 import 'screens/action_points_tracker_screen.dart';
@@ -26,19 +28,19 @@ import 'services/push_service.dart'
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
   await NotificationService.init();
   await PushService.init();
 
   //final token = await FirebaseMessaging.instance.getToken();
   //print('FCM TOKEN: $token');
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: AppColors.navy,
-    statusBarIconBrightness: Brightness.light,
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: AppColors.navy,
+      statusBarIconBrightness: Brightness.light,
+    ),
+  );
   runApp(const AppointmentApp());
 }
 
@@ -52,9 +54,8 @@ class AppointmentApp extends StatelessWidget {
       theme: AppTheme.light(),
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
-      builder: (context, child) => AppSnackBarHost(
-        child: child ?? const SizedBox.shrink(),
-      ),
+      builder: (context, child) =>
+          AppSnackBarHost(child: child ?? const SizedBox.shrink()),
       initialRoute: '/',
       onGenerateRoute: (settings) {
         if (settings.name == '/appointment-details') {
@@ -62,7 +63,8 @@ class AppointmentApp extends StatelessWidget {
           final appointmentId = args?['appointmentId'] as int?;
           if (appointmentId != null) {
             return MaterialPageRoute(
-              builder: (context) => AppointmentDetailsScreen(appointmentId: appointmentId),
+              builder: (context) =>
+                  AppointmentDetailsScreen(appointmentId: appointmentId),
             );
           }
         }
@@ -71,7 +73,8 @@ class AppointmentApp extends StatelessWidget {
           final appointmentId = args?['appointmentId'] as int?;
           if (appointmentId != null) {
             return MaterialPageRoute(
-              builder: (context) => RecordOutcomeScreen(appointmentId: appointmentId),
+              builder: (context) =>
+                  RecordOutcomeScreen(appointmentId: appointmentId),
             );
           }
         }
@@ -79,7 +82,8 @@ class AppointmentApp extends StatelessWidget {
           final args = settings.arguments as Map<String, dynamic>?;
           final editAppointmentId = args?['editAppointmentId'] as int?;
           return MaterialPageRoute(
-            builder: (context) => NewAppointmentScreen(editAppointmentId: editAppointmentId),
+            builder: (context) =>
+                NewAppointmentScreen(editAppointmentId: editAppointmentId),
           );
         }
         return null;
@@ -93,10 +97,12 @@ class AppointmentApp extends StatelessWidget {
         '/diary': (context) => DiaryScreen(),
         '/forgot-password': (context) => const ForgotPasswordScreen(),
         '/settings': (context) => const SettingsScreen(),
+        '/profile': (context) => const ProfileScreen(),
+        '/users-access': (context) => const UsersAccessScreen(),
         '/invite-assistant': (context) => const InviteAssistantScreen(),
         '/pending-invite': (context) => const PendingInviteScreen(),
         '/assistant-details': (context) => const AssistantDetailsScreen(),
-        '/reports': (context) => const ReportsScreen(),
+        '/reports': (context) => const ReportsCenterScreen(),
         '/action-points': (context) => const ActionPointsTrackerScreen(),
       },
     );

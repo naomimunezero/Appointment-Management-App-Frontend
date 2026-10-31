@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../models/appointment.dart';
 import '../services/api_service.dart';
+import '../services/live_refresh.dart';
 import '../utils/date_time_utils.dart';
 //import '../models/action_point.dart';
 
@@ -294,6 +295,7 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
         final now = DateTimeUtils.nowInUganda();
         final formattedDate = DateTimeUtils.formatDateFromDateTime(now);
         final formattedTime = DateTimeUtils.formatTimeFromDateTime(now);
+        liveRefresh.value++;
         AppTheme.showTopSnackBar(context, 'Appointment marked as Held on $formattedDate at $formattedTime');
         Navigator.pop(context, true);
       } else {

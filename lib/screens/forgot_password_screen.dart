@@ -1,381 +1,172 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../services/api_service.dart';
-import '../widgets/field_label.dart';
-import '../utils/validators.dart';
+import '../theme/app_theme.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
-  const ForgotPasswordScreen({super.key});
+  const ForgotPasswordScreen({super.key, this.initialEmail});
+
+  final String? initialEmail;
 
   @override
   State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
 }
 
-enum _Step { email, code, newPassword }
-
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
-  _Step _step = _Step.email;
-
-  // Each step gets its own form key + auto-validate flag so an error on
-  // one step doesn't leak into the next once you move forward.
-  final _emailFormKey = GlobalKey<FormState>();
-  final _codeFormKey = GlobalKey<FormState>();
-  final _passwordFormKey = GlobalKey<FormState>();
-  bool _autoValidateEmail = false;
-  bool _autoValidateCode = false;
-  bool _autoValidatePassword = false;
-
-  final _emailController = TextEditingController();
-  final _codeController = TextEditingController();
-  final _newPasswordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
-  bool _obscureNew = true;
-  bool _obscureConfirm = true;
-
-  bool _loading = false;
+  bool _opening = false;
   String? _error;
 
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _codeController.dispose();
-    _newPasswordController.dispose();
-    _confirmPasswordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _sendCode() async {
-    setState(() => _autoValidateEmail = true);
-    if (!_emailFormKey.currentState!.validate()) return;
-
+  Future<void> _openResetPage() async {
     setState(() {
-      _loading = true;
+      _opening = true;
       _error = null;
     });
-
-    final result = await ApiService.forgotPassword(_emailController.text.trim());
-
-    setState(() => _loading = false);
-
-    if (result['success'] == true) {
-      if (!mounted) return;
-      setState(() => _step = _Step.code);
-    } else {
-      setState(() => _error = result['message']);
+    final apiUri = Uri.parse(ApiService.baseUrl);
+    final resetUri = apiUri.replace(path: '/forgot-password');
+    var opened = false;
+    try {
+      opened = await launchUrl(resetUri, mode: LaunchMode.externalApplication);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = 'Could not open password reset: $error');
+      }
     }
-  }
-
-  void _confirmCode() {
-    setState(() => _autoValidateCode = true);
-    if (!_codeFormKey.currentState!.validate()) return;
-    setState(() {
-      _error = null;
-      _step = _Step.newPassword;
-    });
-  }
-
-  Future<void> _resetPassword() async {
-    setState(() => _autoValidatePassword = true);
-    if (!_passwordFormKey.currentState!.validate()) return;
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    final result = await ApiService.resetPassword(
-      _emailController.text.trim(),
-      _codeController.text.trim(),
-      _newPasswordController.text,
-    );
-
-    setState(() => _loading = false);
-
-    if (result['success'] == true) {
-      if (!mounted) return;
-      // Password reset — send them back to sign in with the new password.
-      Navigator.pushNamed(context, '/login');
-    } else {
-      // Most likely an expired/incorrect code — send them back to re-enter it.
-      setState(() {
-        _error = result['message'];
-        _step = _Step.code;
-      });
-    }
-  }
-
-  Future<void> _resendCode() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    final result = await ApiService.forgotPassword(_emailController.text.trim());
-    setState(() => _loading = false);
-    if (result['success'] != true) {
-      setState(() => _error = result['message']);
-    } else if (mounted) {
-      AppTheme.showTopSnackBar(context, 'Code resent', appBarHeight: 0);
-    }
-  }
-
-  void _goBack() {
-    if (_step == _Step.code) {
-      setState(() {
-        _step = _Step.email;
-        _error = null;
-      });
-    } else if (_step == _Step.newPassword) {
-      setState(() {
-        _step = _Step.code;
-        _error = null;
-      });
-    } else {
-      Navigator.pop(context);
+    if (!mounted) return;
+    setState(() => _opening = false);
+    if (!opened && _error == null) {
+      setState(() => _error = 'Could not open the password reset page.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: const Text('Reset password'),
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(Icons.chevron_left, size: 28),
+          onPressed: _opening ? null : () => Navigator.of(context).pop(),
+        ),
+      ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 12),
-              IconButton(
-                onPressed: _loading ? null : _goBack,
-                icon: const Icon(Icons.arrow_back, color: AppColors.navy),
-                padding: EdgeInsets.zero,
-                alignment: Alignment.centerLeft,
-              ),
-              const SizedBox(height: 20),
-              Center(
-                child: Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.orange, width: 3),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(22),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
                   ),
-                  padding: const EdgeInsets.all(8),
-                  child: Container(
-                    decoration: const BoxDecoration(
+                ],
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 76,
+                    height: 76,
+                    decoration: BoxDecoration(
+                      color: AppColors.orange.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFF2C5A94), AppColors.navy],
+                    ),
+                    child: const Icon(
+                      Icons.mark_email_read_outlined,
+                      color: AppColors.orange,
+                      size: 34,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Forgot your password?',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.navy,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    widget.initialEmail == null
+                        ? 'Continue to our secure password reset page, enter your email, and we’ll send you a reset link.'
+                        : 'Continue to our secure password reset page and request a reset link for your account.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey.shade700, height: 1.5),
+                  ),
+                  const SizedBox(height: 20),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: AppColors.navy,
+                          size: 20,
+                        ),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'For your security, the reset link is sent by email and password changes are completed on the linked page.',
+                            style: TextStyle(
+                              color: AppColors.navy,
+                              fontSize: 13,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppColors.red),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      onPressed: _opening ? null : _openResetPage,
+                      icon: _opening
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.open_in_browser),
+                      label: Text(
+                        _opening ? 'Opening...' : 'Continue to reset page',
                       ),
                     ),
-                    child: Icon(_stepIcon(), color: Colors.white, size: 34),
                   ),
-                ),
+                ],
               ),
-              const SizedBox(height: 22),
-              Center(
-                child: Text(_stepTitle(),
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineMedium
-                        ?.copyWith(fontWeight: FontWeight.w800, color: AppColors.navy)),
-              ),
-              const SizedBox(height: 6),
-              Center(
-                child: Text(
-                  _stepSubtitle(),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                ),
-              ),
-              const SizedBox(height: 30),
-              if (_step == _Step.email) _buildEmailStep(),
-              if (_step == _Step.code) _buildCodeStep(),
-              if (_step == _Step.newPassword) _buildPasswordStep(),
-            ],
+            ),
           ),
         ),
-      ),
-    );
-  }
-
-  IconData _stepIcon() {
-    switch (_step) {
-      case _Step.email:
-        return Icons.mail_outline;
-      case _Step.code:
-        return Icons.pin_outlined;
-      case _Step.newPassword:
-        return Icons.lock_reset;
-    }
-  }
-
-  String _stepTitle() {
-    switch (_step) {
-      case _Step.email:
-        return 'Forgot password?';
-      case _Step.code:
-        return 'Enter the code';
-      case _Step.newPassword:
-        return 'Set new password';
-    }
-  }
-
-  String _stepSubtitle() {
-    switch (_step) {
-      case _Step.email:
-        return "Enter your email and we'll send you a reset code";
-      case _Step.code:
-        return 'We sent a code to ${_emailController.text.trim()}';
-      case _Step.newPassword:
-        return 'Choose a new password for your account';
-    }
-  }
-
-  Widget _buildEmailStep() {
-    return Form(
-      key: _emailFormKey,
-      autovalidateMode: _autoValidateEmail ? AutovalidateMode.onUserInteraction : AutovalidateMode.disabled,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const FieldLabel('EMAIL ADDRESS'),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(
-              hintText: 'vincent@nugsoft.com',
-              hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-            ),
-            validator: emailValidator,
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: AppColors.red)),
-          ],
-          const SizedBox(height: 24),
-          _primaryButton(label: 'Send code', onPressed: _loading ? null : _sendCode),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCodeStep() {
-    return Form(
-      key: _codeFormKey,
-      autovalidateMode: _autoValidateCode ? AutovalidateMode.onUserInteraction : AutovalidateMode.disabled,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const FieldLabel('RESET CODE'),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _codeController,
-            keyboardType: TextInputType.number,
-            maxLength: 6,
-            decoration: InputDecoration(
-              hintText: '123456',
-              counterText: '',
-              hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-            ),
-            validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'Code is required';
-              if (v.trim().length < 4) return 'Enter the full code';
-              return null;
-            },
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 4),
-            Text(_error!, style: const TextStyle(color: AppColors.red)),
-          ],
-          const SizedBox(height: 12),
-          Center(
-            child: TextButton(
-              onPressed: _loading ? null : _resendCode,
-              child: const Text("Didn't get a code? Resend",
-                  style: TextStyle(color: AppColors.orange, fontWeight: FontWeight.w600)),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _primaryButton(label: 'Verify code', onPressed: _loading ? null : _confirmCode),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPasswordStep() {
-    return Form(
-      key: _passwordFormKey,
-      autovalidateMode: _autoValidatePassword ? AutovalidateMode.onUserInteraction : AutovalidateMode.disabled,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const FieldLabel('NEW PASSWORD'),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _newPasswordController,
-            obscureText: _obscureNew,
-            decoration: InputDecoration(
-              suffixIcon: IconButton(
-                icon: Icon(_obscureNew ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                    color: Colors.grey[500], size: 20),
-                onPressed: () => setState(() => _obscureNew = !_obscureNew),
-              ),
-            ),
-            validator: (v) {
-              if (v == null || v.isEmpty) return 'New password is required';
-              if (v.length < 6) return 'Password must be at least 6 characters';
-              return null;
-            },
-          ),
-          const SizedBox(height: 14),
-          const FieldLabel('CONFIRM PASSWORD'),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _confirmPasswordController,
-            obscureText: _obscureConfirm,
-            decoration: InputDecoration(
-              suffixIcon: IconButton(
-                icon: Icon(_obscureConfirm ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                    color: Colors.grey[500], size: 20),
-                onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
-              ),
-            ),
-            validator: (v) {
-              if (v == null || v.isEmpty) return 'Please confirm your password';
-              if (v != _newPasswordController.text) return "Passwords don't match";
-              return null;
-            },
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: AppColors.red)),
-          ],
-          const SizedBox(height: 24),
-          _primaryButton(label: 'Reset password', onPressed: _loading ? null : _resetPassword),
-        ],
-      ),
-    );
-  }
-
-  Widget _primaryButton({required String label, required VoidCallback? onPressed}) {
-    return SizedBox(
-      width: double.infinity,
-      height: 54,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.orange,
-          disabledBackgroundColor: AppColors.orange,
-        ),
-        child: _loading
-            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : Text(label),
       ),
     );
   }
 }
-

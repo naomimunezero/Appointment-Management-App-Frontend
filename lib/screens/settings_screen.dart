@@ -61,7 +61,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _loadingNotificationSettings = false;
       if (result['success'] == true && result['settings'] is Map) {
         final values = Map<String, dynamic>.from(result['settings'] as Map);
-        for (final key in ['daily_summary', 'overdue_alerts', 'assistant_activity_alerts', 'missed_nudge']) {
+        for (final key in [
+          'daily_summary',
+          'overdue_alerts',
+          'assistant_activity_alerts',
+          'missed_nudge',
+        ]) {
           if (values.containsKey(key)) {
             _notificationSettings[key] = _settingEnabled(
               values[key],
@@ -76,12 +81,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     });
     if (result['success'] != true) {
-      AppTheme.showTopSnackBar(context, result['message'] ?? 'Could not load notification settings');
+      AppTheme.showTopSnackBar(
+        context,
+        result['message'] ?? 'Could not load notification settings',
+      );
     }
   }
 
-  Future<void> _updateNotificationSetting(String key, bool value, String label) async {
-    if (_loadingNotificationSettings || _savingNotificationSettings.contains(key)) return;
+  Future<void> _updateNotificationSetting(
+    String key,
+    bool value,
+    String label,
+  ) async {
+    if (_loadingNotificationSettings ||
+        _savingNotificationSettings.contains(key))
+      return;
     final previous = _notificationSettings[key] as bool;
     setState(() {
       _notificationSettings[key] = value;
@@ -113,9 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.navy,
-            ),
+            colorScheme: const ColorScheme.light(primary: AppColors.navy),
           ),
           child: child!,
         );
@@ -126,7 +138,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _updateDailySummaryTime(TimeOfDay time) async {
-    final timeString = '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    final timeString =
+        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
     final previous = _notificationSettings['daily_summary_time'] as String;
     setState(() {
       _notificationSettings['daily_summary_time'] = timeString;
@@ -259,10 +272,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (_savingReminders) return;
     final value = await _editReminder();
     if (value == null || !mounted || _savingReminders) return;
-    await _persistReminderDefaults(
-      [..._defaultReminders, value],
-      successMessage: 'Default reminder added',
-    );
+    await _persistReminderDefaults([
+      ..._defaultReminders,
+      value,
+    ], successMessage: 'Default reminder added');
   }
 
   Future<void> _loadAssistantAccess() async {
@@ -275,17 +288,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ? Map<String, dynamic>.from(assistant)
           : null,
     );
-  }
-
-  Future<void> _openAssistantAccess() async {
-    final route = _assistantAccess == null
-        ? '/invite-assistant'
-        : '/assistant-details';
-    final result = await Navigator.pushNamed(context, route);
-    if (result is Map) {
-      setState(() => _assistantAccess = Map<String, dynamic>.from(result));
-    }
-    await _loadAssistantAccess();
   }
 
   Future<void> _loadPermissions() async {
@@ -314,8 +316,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasAssistant = _assistantAccess != null;
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -345,7 +345,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     _defaultRemindersCard(),
                     const SizedBox(height: 18),
-                    _toggleSection(hasAssistant),
+                    _toggleSection(_assistantAccess != null),
                     const SizedBox(height: 18),
                     _profileRow(context),
                     const SizedBox(height: 18),
@@ -416,8 +416,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 for (var i = 0; i < _defaultReminders.length; i++)
                   InputChip(
                     label: Text(_reminderLabel(_defaultReminders[i])),
-                    onPressed: _savingReminders ? null : () => _editDefaultReminder(i),
-                    onDeleted: _savingReminders ? null : () => _removeDefaultReminder(i),
+                    onPressed: _savingReminders
+                        ? null
+                        : () => _editDefaultReminder(i),
+                    onDeleted: _savingReminders
+                        ? null
+                        : () => _removeDefaultReminder(i),
                     deleteIcon: const Icon(Icons.close, size: 18),
                     backgroundColor: AppColors.orange.withValues(alpha: 0.12),
                     labelStyle: const TextStyle(
@@ -578,7 +582,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () {},
+        onTap: () => Navigator.pushNamed(context, '/profile'),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -596,7 +600,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Vincent Matsiko • vincent@nugsoft.com',
+                    'Manage your personal details and security',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                   ),
                 ],
@@ -612,7 +616,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _accessSection(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.only(top: 8, left: 6, right: 6, bottom: 8),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -623,90 +627,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 8, 12, 10),
-            child: Text(
-              'Users & access',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: AppColors.navy,
-              ),
-            ),
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        onTap: () => Navigator.pushNamed(context, '/users-access'),
+        title: const Text(
+          'Users & access',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            color: AppColors.navy,
           ),
-
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: _openAssistantAccess,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                decoration: BoxDecoration(
-                  color: AppColors.orange.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  _assistantAccess == null
-                      ? 'Invite Assistant'
-                      : 'Assistant details',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.orange,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
-      ),
-    );
-  }
-
-  Widget _actionButton(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, '/invite-assistant'),
-      child: Container(
-        width: 58,
-        height: 58,
-        decoration: const BoxDecoration(
-          color: AppColors.orange,
-          shape: BoxShape.circle,
         ),
-        child: const Icon(Icons.add, color: Colors.white, size: 32),
-      ),
-    );
-  }
-
-  Widget _miniAccessItem(IconData icon, String label, bool selected) {
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          children: [
-            Icon(
-              icon,
-              color: selected ? AppColors.navy : Colors.grey[600],
-              size: 28,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: selected ? AppColors.navy : Colors.grey[600],
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
+        subtitle: const Text('Manage users and their permissions'),
+        trailing: const Icon(Icons.chevron_right, color: Colors.grey),
       ),
     );
   }
