@@ -313,6 +313,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _email = user['email']?.toString() ?? _email;
           });
           // Reload profile data to ensure fresh state
+          // Add delay to ensure dialog is fully disposed before setState
+          await Future.delayed(const Duration(milliseconds: 300));
+          if (!mounted) return;
           await _loadProfile();
           AppTheme.showTopSnackBar(context, 'Email changed successfully.');
         } else {

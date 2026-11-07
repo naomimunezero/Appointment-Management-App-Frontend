@@ -33,7 +33,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _load() async {
     try {
-      final response = await ApiService.getNotifications();
+      // Fetch notifications with type filter based on selected tab
+      // Backend expects: reminders, overdue, activity (plural for reminders)
+      String? typeFilter;
+      if (_selectedType != 'all') {
+        // Map our filter types to backend API types
+        typeFilter = _selectedType == 'reminder' ? 'reminders' : _selectedType;
+      }
+
+      final response = await ApiService.getNotifications(type: typeFilter);
 
       print('NOTIFICATIONS SCREEN RESPONSE: $response');
       print('NOTIFICATIONS COUNT: ${response.length}');
@@ -76,13 +84,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   List<dynamic> get _filteredNotifications {
     print('FILTERING - Selected type: $_selectedType, Total notifications: ${notifications.length}');
 
+    // Backend handles filtering, but add frontend filtering as fallback
     if (_selectedType == 'all') {
-      print('RETURNING ALL NOTIFICATIONS: ${notifications.length}');
       return notifications;
     }
 
     final filtered = notifications.where((notification) {
-      return notification['type']?.toString() == _selectedType;
+      final type = notification['type']?.toString();
+      // Map backend types to our filter types
+      if (_selectedType == 'reminder') {
+        return type == 'reminder';
+      }
+      return type == _selectedType;
     }).toList();
 
     print('FILTERED COUNT: ${filtered.length}');
@@ -93,7 +106,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   void _selectType(String type) {
     setState(() {
       _selectedType = type;
+      _loading = true; // Show loading while fetching new data
     });
+    _load(); // Reload notifications with new filter
   }
 
   // Get color according to notification type
@@ -315,7 +330,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                 : message;
 
                             String displayTime = _formatTime(time);
-                            if (type == 'reminder' && appointmentDate != null) {
+
+                            // For reminders, always show the arrival time (when notification was sent)
+                            // and show time_remaining as a badge or additional info
+                            if (type == 'reminder') {
+                              // Use the notification arrival time
+                              displayTime = _formatTime(time);
+                            } else if (type == 'overdue' && notification['time_overdue'] != null) {
+                              // For overdue, show how long it's been overdue
+                              displayTime = notification['time_overdue'].toString();
+                            } else if (type == 'reminder' && appointmentDate != null) {
+                              // Fallback to frontend calculation if backend doesn't provide it
                               try {
                                 final dt = DateTime.parse('$appointmentDate ${startTime ?? "00:00:00"}');
                                 displayTime = DateTimeUtils.relativeCountdown(dt);
@@ -427,7 +452,8 @@ class _NotificationCard extends StatelessWidget {
   final String? purpose;            // ADD
   final String? appointmentDate;    // ADD
   final String? startTime;          // ADD
-  final String? location; 
+  final String? location;
+  final String? timeRemaining;      // ADD: For reminders
   final Future<void> Function()? onViewDetails;
 
   const _NotificationCard({
@@ -442,6 +468,7 @@ class _NotificationCard extends StatelessWidget {
     this.appointmentDate,            // ADD
     this.startTime,                  // ADD
     this.location,
+    this.timeRemaining,
     this.onViewDetails,
   });
 
@@ -524,7 +551,7 @@ class _NotificationCard extends StatelessWidget {
                           ),
                         ],
 
-                        if (time.isNotEmpty || appointmentId != null) ...[
+                        if (time.isNotEmpty || appointmentId != null || timeRemaining != null) ...[
                           const SizedBox(height: 10),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -543,7 +570,19 @@ class _NotificationCard extends StatelessWidget {
                                 )
                               else
                                 const SizedBox.shrink(),
-                              if (appointmentId != null)
+                              if (timeRemaining != null && timeRemaining!.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    timeRemaining!,
+                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.orange),
+                                  ),
+                                )
+                              else if (appointmentId != null)
                                 GestureDetector(
                                   onTap: onViewDetails,
                                   child: Text(

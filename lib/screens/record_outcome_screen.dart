@@ -131,12 +131,16 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
         final descController = TextEditingController();
         String? selectedOwner;
         DateTime? selectedDate;
+        TimeOfDay? selectedTime;
 
         // Pre-fill if editing
         if (editIndex != null) {
           descController.text = _actionPoints[editIndex].description;
           selectedOwner = _actionPoints[editIndex].owner;
           selectedDate = _actionPoints[editIndex].dueDate;
+          selectedTime = _actionPoints[editIndex].dueDate != null
+              ? TimeOfDay.fromDateTime(_actionPoints[editIndex].dueDate!)
+              : null;
         }
 
         return StatefulBuilder(
@@ -194,6 +198,25 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
                             : 'Pick a date',
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    const Text('Due time'),
+                    TextButton.icon(
+                      onPressed: () async {
+                        final time = await showTimePicker(
+                          context: context,
+                          initialTime: selectedTime ?? TimeOfDay.now(),
+                        );
+                        if (time != null) {
+                          setState(() => selectedTime = time);
+                        }
+                      },
+                      icon: const Icon(Icons.access_time),
+                      label: Text(
+                        selectedTime != null
+                            ? selectedTime!.format(context)
+                            : 'Pick a time',
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -205,13 +228,27 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
                 TextButton(
                   onPressed: () {
                     if (descController.text.trim().isNotEmpty) {
+                      // Combine date and time into a single DateTime
+                      DateTime? combinedDateTime;
+                      if (selectedDate != null && selectedTime != null) {
+                        combinedDateTime = DateTime(
+                          selectedDate!.year,
+                          selectedDate!.month,
+                          selectedDate!.day,
+                          selectedTime!.hour,
+                          selectedTime!.minute,
+                        );
+                      } else if (selectedDate != null) {
+                        combinedDateTime = selectedDate;
+                      }
+
                       this.setState(() {
                         if (editIndex != null) {
                           _actionPoints[editIndex] = ActionPointData(
                             id: _actionPoints[editIndex].id,
                             description: descController.text.trim(),
                             owner: selectedOwner,
-                            dueDate: selectedDate,
+                            dueDate: combinedDateTime,
                             isCompleted: _actionPoints[editIndex].isCompleted,
                           );
                         } else {
@@ -220,7 +257,7 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
                               id: DateTime.now().millisecondsSinceEpoch,
                               description: descController.text.trim(),
                               owner: selectedOwner,
-                              dueDate: selectedDate,
+                              dueDate: combinedDateTime,
                             ),
                           );
                         }
@@ -282,7 +319,7 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
             .map((ap) => {
                   'description': ap.description,
                   'responsible_person': ap.owner,
-                  'due_date': ap.dueDate?.toIso8601String().substring(0, 10),
+                  'due_at': ap.dueDate?.toIso8601String(),
                   'status': ap.isCompleted ? 'done' : 'pending',
                 })
             .toList(),
@@ -623,7 +660,7 @@ class _RecordOutcomeScreenState extends State<RecordOutcomeScreen> {
                                           ),
                                           const SizedBox(height: 4),
                                           Text(
-                                            'By ${ap.owner?.isNotEmpty == true ? ap.owner : 'unassigned'} • ${ap.dueDate != null ? 'Due ${DateTimeUtils.formatDateFromDateTime(ap.dueDate!)}' : 'No due date'}',
+                                            'By ${ap.owner?.isNotEmpty == true ? ap.owner : 'unassigned'} • ${ap.dueDate != null ? 'Due ${DateTimeUtils.formatDateTimeWithTime(ap.dueDate!)}' : 'No due date'}',
                                             style: const TextStyle(
                                               fontSize: 11,
                                               color: Color(0xFF888888),

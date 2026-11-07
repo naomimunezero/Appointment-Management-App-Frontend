@@ -165,4 +165,16 @@ class DateTimeUtils {
       return dateStr;
     }
   }
+
+  /// Formats a DateTime to "4 Nov 2026 at 14:30" (24-hour format)
+  static String formatDateTimeWithTime(DateTime dateTime) {
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final month = months[dateTime.month - 1];
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    return '$month ${dateTime.day} ${dateTime.year} at $hour:$minute';
+  }
 }

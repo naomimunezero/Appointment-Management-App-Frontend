@@ -19,7 +19,7 @@ void main() {
             {'title': 'Discussed roadmap', 'status': 'held'}
           ],
           'action_points': [
-            {'description': 'Send proposal', 'due_date': '2026-09-05'}
+            {'description': 'Send proposal', 'due_at': '2026-09-05T14:30:00Z'}
           ],
         }
       }

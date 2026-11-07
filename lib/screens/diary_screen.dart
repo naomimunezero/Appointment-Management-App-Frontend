@@ -212,7 +212,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
             return;
           }
 
-          if (index == 2 && _canExportReports) {
+          if (index == 2) {
             Navigator.pushNamed(context, '/reports');
           }
 
@@ -226,7 +226,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
             '/new-appointment',
           );
         } : null,
-        showReports: _canExportReports,
+        showReports: true,
       ),
     );
   }

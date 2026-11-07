@@ -31,7 +31,7 @@ class ActionPoint {
       id: json['id'] is num ? (json['id'] as num).toInt() : int.parse(json['id'].toString()),
       description: json['description'] ?? '',
       responsiblePerson: json['responsible_person'],
-      dueDate: json['due_date'] != null ? DateTime.tryParse(json['due_date']) : null,
+      dueDate: json['due_at'] != null ? DateTime.tryParse(json['due_at']) : null,
       status: json['status'] ?? 'pending',
       completed: completed,
       owner: json['owner'],

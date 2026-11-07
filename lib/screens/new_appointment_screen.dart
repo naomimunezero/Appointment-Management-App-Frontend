@@ -1151,14 +1151,13 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
         onTap: (index) {
           if (index == 0) Navigator.pushNamed(context, '/dashboard');
           if (index == 1) Navigator.pushNamed(context, '/diary');
-          if (index == 2 && _canExportReports)
-            Navigator.pushNamed(context, '/reports');
+          if (index == 2) Navigator.pushNamed(context, '/reports');
           if (index == 3) {
             Navigator.pushNamed(context, '/settings');
           }
         },
         onAddTap: () => Navigator.pushNamed(context, '/new-appointment'),
-        showReports: _canExportReports,
+        showReports: true,
       ),
     );
   }

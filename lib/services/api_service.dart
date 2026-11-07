@@ -521,15 +521,20 @@ class ApiService {
     return jsonDecode(response.body);
   }
 
-  static Future<List<dynamic>> getNotifications() async {
+  static Future<List<dynamic>> getNotifications({String? type}) async {
     try {
       final token = await _getToken();
       print(
         'GET NOTIFICATIONS - Token exists: ${token != null && token.isNotEmpty}',
       );
 
+      String url = '$baseUrl/notifications';
+      if (type != null) {
+        url += '?type=$type';
+      }
+
       final response = await http.get(
-        Uri.parse('$baseUrl/notifications'),
+        Uri.parse(url),
         headers: {
           'Authorization': 'Bearer $token',
           'Accept': 'application/json',
@@ -1448,7 +1453,7 @@ class ApiService {
             body: jsonEncode({
               'description': description,
               'responsible_person': responsiblePerson,
-              'due_date': dueDate,
+              'due_at': dueDate,
             }),
           )
           .timeout(const Duration(seconds: 10));

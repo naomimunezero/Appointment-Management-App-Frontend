@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/action_point.dart';
+import '../utils/date_time_utils.dart';
 
 class DiscussionNotesAndActionPointsSection extends StatelessWidget {
   final String? discussionNotes;
@@ -127,7 +128,7 @@ class DiscussionNotesAndActionPointsSection extends StatelessWidget {
                   ),
                   subtitle: actionPoint.dueDate != null
                       ? Text(
-                          'Due: ${_formatDate(actionPoint.dueDate!)}',
+                          'Due: ${DateTimeUtils.formatDateTimeWithTime(actionPoint.dueDate!)}',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[500],
@@ -170,13 +171,5 @@ class DiscussionNotesAndActionPointsSection extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  String _formatDate(DateTime date) {
-    final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-    return '${months[date.month - 1]} ${date.day}';
   }
 }

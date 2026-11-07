@@ -137,6 +137,7 @@ class _CountdownRing extends StatefulWidget {
 
 class _CountdownRingState extends State<_CountdownRing> {
   static const _window = Duration(hours: 24);
+  static const _finalHour = Duration(hours: 1);
   late DateTime _now;
   Timer? _timer;
 
@@ -144,7 +145,7 @@ class _CountdownRingState extends State<_CountdownRing> {
   void initState() {
     super.initState();
     _now = DateTime.now();
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       final now = DateTime.now();
       if (mounted) setState(() => _now = now);
     });
@@ -168,27 +169,30 @@ class _CountdownRingState extends State<_CountdownRing> {
   Widget build(BuildContext context) {
     final start = widget.appointmentStart;
     final remaining = start?.difference(_now);
-    final remainingHours = remaining == null
-        ? null
-        : remaining.inSeconds / Duration.secondsPerHour;
+    final isFinalHour = remaining != null &&
+        remaining > Duration.zero &&
+        remaining <= _finalHour;
+    final progressWindow = isFinalHour ? _finalHour : _window;
     final ringProgress = remaining == null || remaining > _window
         ? 0.0
-        : (remaining.inSeconds / _window.inSeconds).clamp(0.0, 1.0).toDouble();
+        : (remaining.inSeconds / progressWindow.inSeconds)
+            .clamp(0.0, 1.0)
+            .toDouble();
     String label;
 
     if (remaining == null) {
       label = '--';
     } else if (remaining.isNegative || remaining == Duration.zero) {
-      label = 'NOW';
+      label = '0\nMIN';
     } else if (remaining > _window) {
       final days = (remaining.inSeconds / Duration.secondsPerDay).ceil();
       label = '$days\n${days == 1 ? 'DAY' : 'DAYS'}';
-    } else if (remainingHours! >= 1) {
-      final hours = remainingHours.roundToDouble();
-      label = '${hours == hours.roundToDouble() ? hours.toInt() : hours}\n${hours == 1 ? 'HR' : 'HRS'}';
+    } else if (isFinalHour) {
+      final minutes = (remaining.inSeconds / Duration.secondsPerMinute).ceil();
+      label = '$minutes\n${minutes == 1 ? 'MIN' : 'MINS'}';
     } else {
-      final halfHours = (remainingHours! * 2).ceil() / 2;
-      label = '$halfHours\n${halfHours == 1 ? 'HR' : 'HRS'}';
+      final hours = (remaining.inSeconds / Duration.secondsPerHour).ceil();
+      label = '$hours\n${hours == 1 ? 'HR' : 'HRS'}';
     }
 
     return SizedBox(

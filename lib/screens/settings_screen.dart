@@ -362,14 +362,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: (index) {
           if (index == 0) Navigator.pushNamed(context, '/dashboard');
           if (index == 1) Navigator.pushNamed(context, '/diary');
-          if (index == 2 && _canExportReports)
-            Navigator.pushNamed(context, '/reports');
+          if (index == 2) Navigator.pushNamed(context, '/reports');
           if (index == 3) return;
         },
         onAddTap: _canManageAppointments
             ? () => Navigator.pushNamed(context, '/new-appointment')
             : null,
-        showReports: _canExportReports,
+        showReports: true,
       ),
     );
   }
