@@ -66,6 +66,9 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
       text: actionPoint.responsiblePerson ?? actionPoint.owner ?? '',
     );
     DateTime? dueDate = actionPoint.dueDate;
+    TimeOfDay? dueTime = actionPoint.dueDate != null
+        ? TimeOfDay.fromDateTime(actionPoint.dueDate!)
+        : null;
     final values = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -98,8 +101,23 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
                   label: Text(dueDate == null ? 'No due date' : DateFormat.yMMMd().format(dueDate!)),
                 ),
                 if (dueDate != null)
+                  TextButton.icon(
+                    onPressed: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: dueTime ?? TimeOfDay.now(),
+                      );
+                      if (picked != null) setDialogState(() => dueTime = picked);
+                    },
+                    icon: const Icon(Icons.access_time),
+                    label: Text(dueTime == null ? 'No due time' : dueTime!.format(context)),
+                  ),
+                if (dueDate != null)
                   TextButton(
-                    onPressed: () => setDialogState(() => dueDate = null),
+                    onPressed: () => setDialogState(() {
+                      dueDate = null;
+                      dueTime = null;
+                    }),
                     child: const Text('Clear due date'),
                   ),
               ],
@@ -108,11 +126,26 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext, {
-                'description': descriptionController.text.trim(),
-                'owner': ownerController.text.trim(),
-                'dueDate': dueDate,
-              }),
+              onPressed: () {
+                // Combine date and time into a single DateTime
+                DateTime? combinedDateTime;
+                if (dueDate != null && dueTime != null) {
+                  combinedDateTime = DateTime(
+                    dueDate!.year,
+                    dueDate!.month,
+                    dueDate!.day,
+                    dueTime!.hour,
+                    dueTime!.minute,
+                  );
+                } else if (dueDate != null) {
+                  combinedDateTime = dueDate;
+                }
+                Navigator.pop(dialogContext, {
+                  'description': descriptionController.text.trim(),
+                  'owner': ownerController.text.trim(),
+                  'dueDate': combinedDateTime,
+                });
+              },
               child: const Text('Save'),
             ),
           ],
@@ -127,7 +160,7 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
       actionPoint.id,
       values['description'] as String,
       (values['owner'] as String).isEmpty ? null : values['owner'] as String,
-      selectedDate?.toIso8601String().substring(0, 10),
+      selectedDate?.toIso8601String(),
     );
     if (!mounted) return;
     if (result['success'] == true) {
@@ -535,15 +568,26 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
   }
 
   List<String> _formatReminders(List<Map<String, dynamic>> reminders) {
-    // Use the description field from the backend
-    // If description is null, return empty list which will show "No reminders set"
-    final descriptions = reminders
-        .map((r) => r['description']?.toString())
-        .where((desc) => desc != null && desc.isNotEmpty)
-        .cast<String>()
-        .toList();
+    return reminders.map((reminder) {
+      final description = reminder['description']?.toString().trim();
+      if (description != null && description.isNotEmpty) return description;
 
-    return descriptions;
+      final rawMinutes = reminder['minutes_before'];
+      final minutes = rawMinutes is num
+          ? rawMinutes.toInt()
+          : int.tryParse(rawMinutes?.toString() ?? '') ?? 0;
+      if (minutes <= 0) return '';
+
+      if (minutes >= 1440 && minutes % 1440 == 0) {
+        final days = minutes ~/ 1440;
+        return '$days day${days == 1 ? '' : 's'} before';
+      }
+      if (minutes >= 60 && minutes % 60 == 0) {
+        final hours = minutes ~/ 60;
+        return '$hours hr${hours == 1 ? '' : 's'} before';
+      }
+      return '$minutes min before';
+    }).where((description) => description.isNotEmpty).toList();
   }
 }
 

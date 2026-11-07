@@ -153,12 +153,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         onTap: (index) {
           if (index == 0) return;
           if (index == 1) Navigator.pushNamed(context, '/diary');
-          if (index == 2 && _canExportReports)
-            Navigator.pushNamed(context, '/reports');
+          if (index == 2) Navigator.pushNamed(context, '/reports');
           if (index == 3) Navigator.pushNamed(context, '/settings');
         },
         onAddTap: _canManageAppointments ? _openNewAppointment : null,
-        showReports: _canExportReports,
+        showReports: true,
       ),
     );
   }
@@ -267,10 +266,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return dateB.toString().compareTo(dateA.toString());
       });
     } else if (category == 'actions') {
-      // Sort by due_date earliest first
+      // Sort by due_at earliest first
       appointments.sort((a, b) {
-        final dueA = a['due_date'] ?? a['date'] ?? '';
-        final dueB = b['due_date'] ?? b['date'] ?? '';
+        final dueA = a['due_at'] ?? a['date'] ?? '';
+        final dueB = b['due_at'] ?? b['date'] ?? '';
         return dueA.toString().compareTo(dueB.toString());
       });
     }
@@ -383,7 +382,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             final dateValue =
                 item['appointment_date'] ??
                 item['date'] ??
-                item['due_date'] ??
+                item['due_at'] ??
                 'No date';
             final timeValue = item['start_time'] ?? item['time'] ?? '';
 
@@ -400,8 +399,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 );
               }
             } else if (category == 'actions') {
-              subtitle = (item['due_date'] ?? item['date'] ?? 'No due date')
-                  .toString();
+              final dueAt = item['due_at'] ?? item['date'];
+              if (dueAt != null && dueAt.toString().isNotEmpty) {
+                try {
+                  final dateTime = DateTime.parse(dueAt.toString());
+                  subtitle = DateTimeUtils.formatDateTimeWithTime(dateTime);
+                } catch (_) {
+                  subtitle = dueAt.toString();
+                }
+              } else {
+                subtitle = 'No due date';
+              }
             } else {
               subtitle = _formatAppointmentDateTime(
                 dateValue.toString(),

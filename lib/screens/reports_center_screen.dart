@@ -61,7 +61,7 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
     ReportSection(
       id: 'recent_activity',
       title: 'Recent activity',
-      description: 'Team activity from the past 30 days',
+      description: 'Team activity from the past 3 months',
       icon: Icons.history,
     ),
   ];
@@ -89,7 +89,7 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
   }
 
   void _onLiveRefresh() {
-    if (_permissionChecked && _canExportReports) {
+    if (_permissionChecked) {
       _loadReportData();
     }
   }
@@ -105,17 +105,16 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
       _canManageAppointments = permissions[1];
       _permissionChecked = true;
     });
-    if (_canExportReports) {
-      // Set initial date range if not already set
-      if (_startDate == null || _endDate == null) {
-        final now = DateTime.now();
-        setState(() {
-          _startDate = now.subtract(const Duration(days: 29));
-          _endDate = now;
-        });
-      }
-      await _loadReportData();
+    // Set initial date range if not already set
+    if (_startDate == null || _endDate == null) {
+      final now = DateTime.now();
+      setState(() {
+        _startDate = now.subtract(const Duration(days: 29));
+        _endDate = now;
+      });
     }
+    // Load report data regardless of permission (for viewing)
+    await _loadReportData();
   }
 
   Future<void> _selectDateRange() async {
@@ -176,6 +175,10 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
   }
 
   Future<void> _exportCombinedPdf() async {
+    if (!_canExportReports) {
+      AppTheme.showTopSnackBar(context, 'You do not have permission to export reports');
+      return;
+    }
     if (_startDate == null || _endDate == null) {
       AppTheme.showTopSnackBar(context, 'Please select a date range first');
       return;
@@ -212,6 +215,10 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
   }
 
   Future<void> _shareWhatsApp() async {
+    if (!_canExportReports) {
+      AppTheme.showTopSnackBar(context, 'You do not have permission to export reports');
+      return;
+    }
     if (_startDate == null || _endDate == null) {
       AppTheme.showTopSnackBar(context, 'Please select a date range first');
       return;
@@ -245,6 +252,10 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
   }
 
   Future<void> _sendEmail() async {
+    if (!_canExportReports) {
+      AppTheme.showTopSnackBar(context, 'You do not have permission to export reports');
+      return;
+    }
     if (_startDate == null || _endDate == null) {
       AppTheme.showTopSnackBar(context, 'Please select a date range first');
       return;
@@ -352,14 +363,6 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
     if (!_permissionChecked) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    if (!_canExportReports) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Reports')),
-        body: const Center(
-          child: Text('You do not have permission to view reports.'),
-        ),
-      );
-    }
 
     final counts = _reportData?['counts'] ?? {};
     return Scaffold(
@@ -397,7 +400,7 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
               children: [
                 // Date Range Selector
                 InkWell(
-                  onTap: _selectDateRange,
+                  onTap: _canExportReports ? _selectDateRange : null,
                   borderRadius: BorderRadius.circular(16),
                   child: Container(
                     padding: const EdgeInsets.all(16),
@@ -530,18 +533,39 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text(
-                        'COMBINED REPORT',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.navy,
-                          letterSpacing: 0.5,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'COMBINED REPORT',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.navy,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          if (!_canExportReports)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                'View only',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 16),
                       ElevatedButton.icon(
-                        onPressed: _exporting ? null : _exportCombinedPdf,
+                        onPressed: (_exporting || !_canExportReports) ? null : _exportCombinedPdf,
                         icon: _exporting
                             ? const SizedBox(
                                 width: 16,
@@ -554,7 +578,7 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
                             : const Icon(Icons.download),
                         label: const Text('Export PDF'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.navy,
+                          backgroundColor: _canExportReports ? AppColors.navy : Colors.grey,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
@@ -564,7 +588,7 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
                       ),
                       const SizedBox(height: 12),
                       ElevatedButton.icon(
-                        onPressed: _sharing ? null : _shareWhatsApp,
+                        onPressed: (_sharing || !_canExportReports) ? null : _shareWhatsApp,
                         icon: _sharing
                             ? const SizedBox(
                                 width: 16,
@@ -577,7 +601,7 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
                             : const Icon(Icons.share),
                         label: const Text('Share on WhatsApp'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
+                          backgroundColor: _canExportReports ? Colors.green : Colors.grey,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
@@ -587,7 +611,7 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
                       ),
                       const SizedBox(height: 12),
                       ElevatedButton.icon(
-                        onPressed: _emailing ? null : _sendEmail,
+                        onPressed: (_emailing || !_canExportReports) ? null : _sendEmail,
                         icon: _emailing
                             ? const SizedBox(
                                 width: 16,
@@ -600,12 +624,12 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
                             : const Icon(Icons.email_outlined),
                         label: const Text('Email'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: AppColors.navy,
+                          backgroundColor: _canExportReports ? Colors.white : Colors.grey,
+                          foregroundColor: _canExportReports ? AppColors.navy : Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
-                            side: const BorderSide(color: AppColors.navy),
+                            side: _canExportReports ? const BorderSide(color: AppColors.navy) : BorderSide.none,
                           ),
                         ),
                       ),
@@ -628,7 +652,7 @@ class _ReportsCenterScreenState extends State<ReportsCenterScreen> {
         onAddTap: _canManageAppointments
             ? () => Navigator.pushNamed(context, '/new-appointment')
             : null,
-        showReports: _canExportReports,
+        showReports: true,
       ),
     );
   }
@@ -1276,6 +1300,18 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     return '';
   }
 
+  String _personDisplayName(Map<String, dynamic> person) {
+    final name = _firstText(person, [
+      'name',
+      'full_name',
+      'person_name',
+      'contact_name',
+      'attendee_name',
+    ]);
+    final emailSuffix = name.indexOf('<');
+    return (emailSuffix >= 0 ? name.substring(0, emailSuffix) : name).trim();
+  }
+
   List<Map<String, dynamic>> _discussionRows() {
     final rawDiscussions = _reportData?['discussions'];
     final rows = rawDiscussions is List
@@ -1663,15 +1699,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             return DataRow(
               cells: [
                 DataCell(
-                  Text(
-                    _firstText(person, [
-                      'name',
-                      'full_name',
-                      'person_name',
-                      'contact_name',
-                      'attendee_name',
-                    ]),
-                  ),
+                  Text(_personDisplayName(person)),
                 ),
                 DataCell(Text(_appointmentPurpose(person))),
                 DataCell(Text(_appointmentDate(person))),
@@ -1694,8 +1722,38 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
     final discussions = _discussionRows();
     final actions = _actionRows();
+    final heldAppointmentsWithDiscussions = appointments.where((appointment) {
+      if (appointment['status']?.toString().trim().toLowerCase() != 'held') {
+        return false;
+      }
+      final id = appointment['id']?.toString();
+      final hasLinkedDiscussion = discussions.any((item) {
+        final related = _relatedAppointment(item);
+        return (id != null && related?['id']?.toString() == id) &&
+            _firstText(item, [
+              'summary',
+              'discussion_notes',
+              'notes',
+              'description',
+            ]).isNotEmpty;
+      });
+      final hasAppointmentNotes = _firstText(appointment, [
+        'discussion_notes',
+        'discussion_summary',
+        'summary',
+      ]).isNotEmpty;
+      return hasLinkedDiscussion || hasAppointmentNotes;
+    }).toList();
+
+    if (heldAppointmentsWithDiscussions.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Text('No held appointments with discussion notes found.'),
+      );
+    }
+
     return Column(
-      children: appointments.map((appointment) {
+      children: heldAppointmentsWithDiscussions.map((appointment) {
         final id = appointment['id']?.toString();
         final isExpanded = id != null && _expandedAppointmentIds.contains(id);
         final appointmentDiscussions = discussions.where((item) =>

@@ -335,7 +335,7 @@ class _ActionPointsTrackerScreenState extends State<ActionPointsTrackerScreen> {
                                                     BorderRadius.circular(6),
                                               ),
                                               child: Text(
-                                                'Due ${DateTimeUtils.formatDateFromDateTime(ap.dueDate!)}',
+                                                'Due ${DateTimeUtils.formatDateTimeWithTime(ap.dueDate!)}',
                                                 style: TextStyle(
                                                   fontSize: 10,
                                                   fontWeight: FontWeight.w600,
