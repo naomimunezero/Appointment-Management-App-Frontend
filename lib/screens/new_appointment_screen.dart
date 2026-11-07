@@ -568,14 +568,10 @@ class _NewAppointmentScreenState extends State<NewAppointmentScreen> {
             reminders: _reminders,
           );
 
-          if (result['success'] == true) {
-            Navigator.pop(context, true);
-          }
-
+    if (!mounted) return;
     setState(() => _loading = false);
 
     if (result['success'] == true) {
-      if (!mounted) return;
       AppTheme.showTopSnackBar(
         context,
         isEditing

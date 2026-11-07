@@ -92,11 +92,15 @@ class AppTheme {
     BuildContext context,
     String message, {
     double appBarHeight = kToolbarHeight,
+    String? actionLabel,
+    VoidCallback? onAction,
   }) {
     _topSnackBarTimer?.cancel();
     _topSnackBarMessage.value = _TopSnackBarNotification(
       message: message,
       appBarHeight: appBarHeight,
+      actionLabel: actionLabel,
+      onAction: onAction,
     );
     _topSnackBarTimer = Timer(const Duration(seconds: 5), () {
       _topSnackBarMessage.value = null;
@@ -108,10 +112,14 @@ class _TopSnackBarNotification {
   const _TopSnackBarNotification({
     required this.message,
     required this.appBarHeight,
+    this.actionLabel,
+    this.onAction,
   });
 
   final String message;
   final double appBarHeight;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 }
 
 /// App-level notification host: it stays above each route's Scaffold and
@@ -145,9 +153,27 @@ class AppSnackBarHost extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    child: Text(
-                      notification.message,
-                      style: const TextStyle(color: Colors.white),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            notification.message,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                        if (notification.actionLabel != null &&
+                            notification.onAction != null) ...[
+                          const SizedBox(width: 12),
+                          TextButton(
+                            onPressed: notification.onAction,
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            child: Text(notification.actionLabel!),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),

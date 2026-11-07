@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../models/appointment.dart';
 import '../models/action_point.dart';
 import '../services/api_service.dart';
+import '../services/live_refresh.dart';
 import '../widgets/appointment_info_section.dart';
 import '../widgets/meeting_with_section.dart';
 import '../widgets/reminders_section.dart';
@@ -130,6 +131,7 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
     );
     if (!mounted) return;
     if (result['success'] == true) {
+      liveRefresh.value++;
       setState(() => _appointmentFuture = ApiService.getAppointmentDetails(widget.appointmentId));
     } else {
       AppTheme.showTopSnackBar(
@@ -156,6 +158,7 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
     final result = await ApiService.deleteActionPoint(actionPoint.id);
     if (!mounted) return;
     if (result['success'] == true) {
+      liveRefresh.value++;
       setState(() => _appointmentFuture = ApiService.getAppointmentDetails(widget.appointmentId));
     } else {
       AppTheme.showTopSnackBar(
@@ -409,6 +412,7 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
                                 result['message'] ?? 'Could not update the action point',
                               );
                             }
+                            liveRefresh.value++;
                             setState(() {
                               _appointmentFuture = ApiService.getAppointmentDetails(widget.appointmentId);
                             });
@@ -531,8 +535,8 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
   }
 
   List<String> _formatReminders(List<Map<String, dynamic>> reminders) {
-    // Use the new description field from the backend instead of calculating from minutes_before
-    // The backend now provides the original reminder configuration as a description (e.g., "5h before", "30m before")
+    // Use the description field from the backend
+    // If description is null, return empty list which will show "No reminders set"
     final descriptions = reminders
         .map((r) => r['description']?.toString())
         .where((desc) => desc != null && desc.isNotEmpty)
@@ -638,6 +642,7 @@ class _EditAppointmentSheetState extends State<_EditAppointmentSheet> {
     if (!mounted) return;
     setState(() => _saving = false);
     if (result['success'] == true) {
+      liveRefresh.value++;
       Navigator.pop(context, true);
     } else {
       AppTheme.showTopSnackBar(
