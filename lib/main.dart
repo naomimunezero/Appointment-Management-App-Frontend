@@ -18,10 +18,23 @@ import 'screens/appointment_details_screen.dart';
 import 'screens/record_outcome_screen.dart';
 import 'screens/action_points_tracker_screen.dart';
 import 'services/notification_service.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'services/push_service.dart'
+    show navigatorKey, firebaseBackgroundHandler, PushService;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
   await NotificationService.init();
+  await PushService.init();
+
+  //final token = await FirebaseMessaging.instance.getToken();
+  //print('FCM TOKEN: $token');
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: AppColors.navy,
     statusBarIconBrightness: Brightness.light,
@@ -38,6 +51,7 @@ class AppointmentApp extends StatelessWidget {
       title: 'Appointment Manager',
       theme: AppTheme.light(),
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       builder: (context, child) => AppSnackBarHost(
         child: child ?? const SizedBox.shrink(),
       ),

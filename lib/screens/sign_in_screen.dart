@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../widgets/field_label.dart';
 import '../utils/validators.dart';
+import '../services/push_service.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -36,6 +37,7 @@ class _SignInScreenState extends State<SignInScreen> {
     setState(() => _loading = false);
     if (result['success'] == true) {
       if (!mounted) return;
+      await PushService.registerToken();   
 
       final pendingInvites = result['pendingInvites'];
       if (pendingInvites is List && pendingInvites.isNotEmpty) {

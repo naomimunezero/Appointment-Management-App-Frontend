@@ -7,6 +7,7 @@ import '../widgets/next_appointment_card.dart';
 import '../widgets/stat_cards_row.dart';
 import '../utils/dashboard_utils.dart';
 import '../utils/date_time_utils.dart';
+import '../services/live_refresh.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -21,17 +22,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _userName = 'there';
   bool _canManageAppointments = false;
   bool _canExportReports = false;
+  String _selectedCategory = 'upcoming'; // upcoming, held, missed, actions
 
   @override
   void initState() {
     super.initState();
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: AppColors.navy,
-      statusBarIconBrightness: Brightness.light,
-    ));
+
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: AppColors.navy,
+        statusBarIconBrightness: Brightness.light,
+      ),
+    );
+
     _loadUserName();
     _loadPermissions();
     _loadSummary();
+
+    // Refresh the dashboard when another screen signals an update
+    liveRefresh.addListener(_loadSummary);
+  }
+
+  Future<void> _openNewAppointment() async {
+    await Navigator.pushNamed(context, '/new-appointment');
+    if (mounted) _loadSummary(); // reload when we come back
   }
 
   Future<void> _loadPermissions() async {
@@ -54,11 +68,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadSummary() async {
-    final data = await ApiService.getDashboardSummary();
-    setState(() {
-      _summary = normalizeDashboardPayload(data);
-      _loading = false;
-    });
+    try {
+      final data = await ApiService.getDashboardSummary();
+
+      if (!mounted) return;
+
+      setState(() {
+        _summary = normalizeDashboardPayload(data);
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
   }
 
   Future<void> _openAppointmentDetails(int appointmentId) async {
@@ -68,6 +90,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       arguments: {'appointmentId': appointmentId},
     );
     if (mounted) _loadSummary();
+  }
+
+  @override
+  void dispose() {
+    liveRefresh.removeListener(_loadSummary);
+    super.dispose();
   }
 
   @override
@@ -100,13 +128,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             held: _summary?['held'] ?? 0,
                             missed: _summary?['missed'] ?? 0,
                             actionsDue: _summary?['action_points_pending'] ?? 0,
-                            //onUpcomingTap: () => _showCategoryAppointments('upcoming'),
-                            onHeldTap: () => _showCategoryAppointments('held'),
-                            onMissedTap: () => _showCategoryAppointments('missed'),
-                            onActionsTap: () => _showActionPoints(),
+                            selectedCategory: _selectedCategory,
+                            onCategoryChanged: (category) => setState(() => _selectedCategory = category),
                           ),
                           const SizedBox(height: 16),
-                          _buildUpcomingAppointments(),
+                          _buildCategoryAppointments(),
                         ],
                       ),
                     ),
@@ -123,7 +149,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           if (index == 2 && _canExportReports) Navigator.pushNamed(context, '/reports');
           if (index == 3) Navigator.pushNamed(context, '/settings');
         },
-        onAddTap: _canManageAppointments ? () => Navigator.pushNamed(context, '/new-appointment') : null,
+        onAddTap: _canManageAppointments ? _openNewAppointment : null,
         showReports: _canExportReports,
       ),
     );
@@ -174,20 +200,62 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildUpcomingAppointments() {
-    final dynamic rawAppointments =
-        _summary?['upcoming_appointments'] ??
-        _summary?['upcomingAppointments'] ??
-        _summary?['upcoming_items'] ??
-        _summary?['upcomingItems'] ??
-        const [];
+  Widget _buildCategoryAppointments() {
+    final category = _selectedCategory;
+    final List<Map<String, dynamic>> appointments = _extractCategoryAppointments(category);
 
-    final List appointments = rawAppointments is List
-        ? rawAppointments
-        : (rawAppointments is Map ? extractListFromDashboard(rawAppointments) : const []);
+    // Sort appointments based on category
+    if (category == 'held') {
+      // Sort by held_at (recording date) latest first
+      appointments.sort((a, b) {
+        final heldAtA = a['held_at'] ?? a['appointment_date'] ?? a['date'] ?? '';
+        final heldAtB = b['held_at'] ?? b['appointment_date'] ?? b['date'] ?? '';
+        return heldAtB.toString().compareTo(heldAtA.toString());
+      });
+    } else if (category == 'missed') {
+      // Sort by appointment_date latest first
+      appointments.sort((a, b) {
+        final dateA = a['appointment_date'] ?? a['date'] ?? a['scheduled_at'] ?? '';
+        final dateB = b['appointment_date'] ?? b['date'] ?? b['scheduled_at'] ?? '';
+        return dateB.toString().compareTo(dateA.toString());
+      });
+    } else if (category == 'actions') {
+      // Sort by due_date earliest first
+      appointments.sort((a, b) {
+        final dueA = a['due_date'] ?? a['date'] ?? '';
+        final dueB = b['due_date'] ?? b['date'] ?? '';
+        return dueA.toString().compareTo(dueB.toString());
+      });
+    }
 
-    final availableAppointments = appointments.isEmpty ? _extractCategoryAppointments('upcoming') : appointments;
-    final displayLimit = availableAppointments.length > 5 ? availableAppointments.sublist(0, 5) : availableAppointments;
+    final displayLimit = appointments.length > 5 ? appointments.sublist(0, 5) : appointments;
+
+    // Get category title and button text
+    String categoryTitle;
+    String buttonText;
+    Color buttonColor;
+
+    switch (category) {
+      case 'held':
+        categoryTitle = 'HELD APPOINTMENTS';
+        buttonText = 'View details';
+        buttonColor = AppColors.navy;
+        break;
+      case 'missed':
+        categoryTitle = 'MISSED APPOINTMENTS';
+        buttonText = 'Reschedule';
+        buttonColor = AppColors.red;
+        break;
+      case 'actions':
+        categoryTitle = 'ACTIONS DUE';
+        buttonText = 'View details';
+        buttonColor = AppColors.navy;
+        break;
+      default:
+        categoryTitle = 'UPCOMING APPOINTMENTS';
+        buttonText = 'View details';
+        buttonColor = AppColors.navy;
+    }
 
     if (displayLimit.isEmpty) {
       return Container(
@@ -203,9 +271,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'UPCOMING APPOINTMENTS',
-              style: TextStyle(
+            Text(
+              categoryTitle,
+              style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
                 color: AppColors.navy,
@@ -214,7 +282,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'No upcoming appointments',
+              'No ${category.toLowerCase()}',
               style: TextStyle(
                 fontSize: 13,
                 color: Colors.grey[400],
@@ -238,9 +306,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'UPCOMING APPOINTMENTS',
-            style: TextStyle(
+          Text(
+            categoryTitle,
+            style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w800,
               color: AppColors.navy,
@@ -250,12 +318,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 12),
           ...displayLimit.map<Widget>((apt) {
             final item = apt is Map ? apt : <String, dynamic>{};
-            final id = item['id'] ?? item['appointment_id'] ?? item['appointmentId'];
+            // For action points, use appointment_id to navigate to the parent appointment
+            // For regular appointments, use id
+            final id = category == 'actions'
+                ? (item['appointment_id'] ?? item['appointmentId'])
+                : (item['id'] ?? item['appointment_id'] ?? item['appointmentId']);
             final appointmentId = int.tryParse(id?.toString() ?? '');
-            final title = item['purpose'] ?? item['title'] ?? 'Appointment';
-            final dateValue = item['appointment_date'] ?? item['date'] ?? 'No date';
+            final title = item['purpose'] ?? item['title'] ?? item['description'] ?? 'Appointment';
+            final dateValue = item['appointment_date'] ?? item['date'] ?? item['due_date'] ?? 'No date';
             final timeValue = item['start_time'] ?? item['time'] ?? '';
-            final subtitle = _formatAppointmentDateTime(dateValue.toString(), timeValue.toString());
+
+            // Format subtitle based on category
+            String subtitle;
+            if (category == 'held' && item['held_at'] != null) {
+              try {
+                subtitle = 'Held on ${DateTimeUtils.formatServerTimestamp(item['held_at'].toString())}';
+              } catch (e) {
+                subtitle = _formatAppointmentDateTime(dateValue.toString(), timeValue.toString());
+              }
+            } else if (category == 'actions') {
+              subtitle = (item['due_date'] ?? item['date'] ?? 'No due date').toString();
+            } else {
+              subtitle = _formatAppointmentDateTime(dateValue.toString(), timeValue.toString());
+            }
 
             return Container(
                   padding: const EdgeInsets.all(14),
@@ -280,13 +365,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
                         ),
                       ),
-                      
+
                       ElevatedButton(
                         onPressed: appointmentId == null
                             ? null
-                            : () => _openAppointmentDetails(appointmentId),
+                            : () {
+                                if (category == 'missed') {
+                                  _rescheduleAppointment(appointmentId);
+                                } else {
+                                  _openAppointmentDetails(appointmentId);
+                                }
+                              },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.navy,
+                          backgroundColor: buttonColor,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
@@ -297,9 +388,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           elevation: 0,
                         ),
-                        child: const Text(
-                          'View details',
-                          style: TextStyle(
+                        child: Text(
+                          buttonText,
+                          style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
                             fontSize: 10,
@@ -315,6 +406,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Future<void> _rescheduleAppointment(int appointmentId) async {
+    // Navigate to appointment details first, then user can reschedule from there
+    await Navigator.pushNamed(
+      context,
+      '/appointment-details',
+      arguments: {'appointmentId': appointmentId},
+    );
+    if (mounted) _loadSummary();
+  }
+
   // Turns "Vincent Mugisha" into "VM". Falls back to "?" if there's
   
   String _initials(String name) {
@@ -328,185 +429,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return DateTimeUtils.formatDateTime(dateValue, timeValue);
   }
 
-  void _showCategoryAppointments(String category) {
-    final items = _extractCategoryAppointments(category);
-    if (items.isEmpty) {
-      AppTheme.showTopSnackBar(context, 'No $category appointments available right now.');
-      return;
-    }
-
-    // Sort items by latest first
-    // For held appointments, sort by held_at (recording date)
-    // For other categories, sort by appointment_date
-    items.sort((a, b) {
-      if (category == 'held') {
-        final heldAtA = a['held_at'] ?? a['appointment_date'] ?? a['date'] ?? '';
-        final heldAtB = b['held_at'] ?? b['appointment_date'] ?? b['date'] ?? '';
-        return heldAtB.toString().compareTo(heldAtA.toString());
-      } else {
-        final dateA = a['appointment_date'] ?? a['date'] ?? a['scheduled_at'] ?? '';
-        final dateB = b['appointment_date'] ?? b['date'] ?? b['scheduled_at'] ?? '';
-        return dateB.toString().compareTo(dateA.toString());
-      }
-    });
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        height: MediaQuery.of(context).size.height * 0.7,
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 48,
-                height: 5,
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-            Text(
-              category.toUpperCase(),
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.navy),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: ListView.separated(
-                itemCount: items.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (_, index) {
-                  final item = items[index];
-                  final title = item['purpose'] ?? item['title'] ?? item['name'] ?? 'Appointment';
-                  final date = item['appointment_date'] ?? item['date'] ?? item['scheduled_at'] ?? 'No date';
-                  final time = item['start_time'] ?? item['time'] ?? '';
-                  final id = item['id'] ?? item['appointment_id'] ?? item['appointmentId'];
-                  final appointmentId = int.tryParse(id?.toString() ?? '');
-
-                  // For held appointments, show recording date/time if available
-                  String subtitle;
-                  if (category == 'held' && item['held_at'] != null) {
-                    final heldAt = item['held_at'];
-                    try {
-                      subtitle = 'Held on ${DateTimeUtils.formatServerTimestamp(heldAt.toString())}';
-                    } catch (e) {
-                      subtitle = _formatAppointmentDateTime(date.toString(), time.toString());
-                    }
-                  } else {
-                    subtitle = _formatAppointmentDateTime(date.toString(), time.toString());
-                  }
-
-                  return ListTile(
-                    title: Text(title.toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
-                    subtitle: Text(subtitle),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: appointmentId == null
-                        ? null
-                        : () {
-                            Navigator.pop(context);
-                            _openAppointmentDetails(appointmentId);
-                          },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showActionPoints() {
-    final source = _summary?['action_points'] ?? _summary?['action_points_due'];
-    final items = source is List ? List<dynamic>.from(source) : <dynamic>[];
-    if (items.isEmpty) {
-      AppTheme.showTopSnackBar(context, 'No action points due yet.');
-      return;
-    }
-
-    // Sort action points by due date (earliest first)
-    items.sort((a, b) {
-      final dueA = a['due_date'] ?? a['date'] ?? '';
-      final dueB = b['due_date'] ?? b['date'] ?? '';
-      return dueA.toString().compareTo(dueB.toString());
-    });
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        height: MediaQuery.of(context).size.height * 0.6,
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 48,
-                height: 5,
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-            const Text('ACTIONS DUE', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.navy)),
-            const SizedBox(height: 12),
-            Expanded(
-              child: ListView.builder(
-                itemCount: items.length,
-                itemBuilder: (_, index) {
-                  final item = items[index] is Map ? items[index] as Map : <String, dynamic>{};
-                  final title = item['title'] ?? item['description'] ?? 'Action point';
-                  final due = item['due_date'] ?? item['date'] ?? 'No due date';
-                  final appointment = item['appointment'] is Map
-                      ? item['appointment'] as Map
-                      : const <String, dynamic>{};
-                  final appointmentId = int.tryParse(
-                    (item['appointment_id'] ??
-                            item['appointmentId'] ??
-                            appointment['id'])
-                        ?.toString() ??
-                        '',
-                  );
-                  return ListTile(
-                    title: Text(title.toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
-                    subtitle: Text(due.toString()),
-                    trailing: const Icon(Icons.chevron_right),
-                    enabled: appointmentId != null,
-                    onTap: appointmentId == null
-                        ? null
-                        : () {
-                            Navigator.pop(context);
-                            _openAppointmentDetails(appointmentId);
-                          },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // _showCategoryAppointments and _showActionPoints are no longer needed
+  // Categories are now handled in _buildCategoryAppointments
 
   List<Map<String, dynamic>> _extractCategoryAppointments(String category) {
     final summary = normalizeDashboardPayload(_summary ?? {});
+
+    // For actions, use different keys
+    if (category == 'actions') {
+      final source = summary['action_points'] ?? summary['action_points_due'];
+      if (source is List) {
+        return source.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+      return const [];
+    }
 
     final keys = [
       '${category}_appointments',

@@ -531,24 +531,15 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
   }
 
   List<String> _formatReminders(List<Map<String, dynamic>> reminders) {
-    // Filter out reminders with null or invalid minutes_before
-    final validReminders = reminders.where((r) {
-      final minutes = r['minutes_before'];
-      return minutes != null && minutes is int && minutes > 0;
-    }).toList();
+    // Use the new description field from the backend instead of calculating from minutes_before
+    // The backend now provides the original reminder configuration as a description (e.g., "5h before", "30m before")
+    final descriptions = reminders
+        .map((r) => r['description']?.toString())
+        .where((desc) => desc != null && desc.isNotEmpty)
+        .cast<String>()
+        .toList();
 
-    if (validReminders.isEmpty) {
-      return const ['5 hrs before', '30 min before'];
-    }
-
-    return validReminders.map((r) {
-      final minutes = r['minutes_before'] as int;
-      if (minutes < 60) return '$minutes min before';
-      final hours = (minutes / 60).floor();
-      final remainingMins = minutes % 60;
-      if (remainingMins == 0) return '$hours hr${hours > 1 ? 's' : ''} before';
-      return '$hours hr${hours > 1 ? 's' : ''} $remainingMins min before';
-    }).toList();
+    return descriptions;
   }
 }
 

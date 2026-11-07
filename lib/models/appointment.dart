@@ -66,9 +66,7 @@ class Appointment {
           ? (json['duration_minutes'] as num).toInt()
           : int.tryParse(json['duration_minutes']?.toString() ?? '') ?? 0,
       personToMeet: json['person_to_meet'],
-
       attendees: attendeeDetails.map((attendee) => attendee['name'] ?? '').toList(),
-
       discussionNotes: json['discussion_notes'],
       location: json['location'],
       locationType: json['location_type'],

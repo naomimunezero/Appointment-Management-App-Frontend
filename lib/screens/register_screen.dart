@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../widgets/field_label.dart';
 import '../utils/validators.dart';
+import '../services/push_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -53,6 +54,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (result['success'] == true) {
       if (!mounted) return;
+
+      await PushService.registerToken();   // NEW
+
       // register() already saved the token + name, so they're logged in —
       // straight to the dashboard, no separate sign-in step needed.
       Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (route) => false);
