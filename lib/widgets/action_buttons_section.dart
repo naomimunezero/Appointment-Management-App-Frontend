@@ -46,7 +46,18 @@ class ActionButtonsSection extends StatelessWidget {
             ),
           ),
           if (onRecordOutcome != null && (onEdit != null || onReschedule != null)) const SizedBox(height: 12),
-          if (onEdit != null || onReschedule != null) Row(
+          if (onEdit == null && onReschedule != null)
+            OutlinedButton.icon(
+              onPressed: isLoading ? null : onReschedule,
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppColors.navy, width: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.event_repeat_outlined, size: 18),
+              label: const Text('Reschedule'),
+            ),
+          if (onEdit != null) Row(
             children: [
               Expanded(
                 child: onEdit == null ? const SizedBox.shrink() : OutlinedButton.icon(

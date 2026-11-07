@@ -426,7 +426,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _showActionPoints() {
-    final items = (_summary?['action_points'] ?? _summary?['action_points_due'] ?? const []) as List;
+    final source = _summary?['action_points'] ?? _summary?['action_points_due'];
+    final items = source is List ? List<dynamic>.from(source) : <dynamic>[];
     if (items.isEmpty) {
       AppTheme.showTopSnackBar(context, 'No action points due yet.');
       return;
@@ -473,9 +474,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   final item = items[index] is Map ? items[index] as Map : <String, dynamic>{};
                   final title = item['title'] ?? item['description'] ?? 'Action point';
                   final due = item['due_date'] ?? item['date'] ?? 'No due date';
+                  final appointment = item['appointment'] is Map
+                      ? item['appointment'] as Map
+                      : const <String, dynamic>{};
+                  final appointmentId = int.tryParse(
+                    (item['appointment_id'] ??
+                            item['appointmentId'] ??
+                            appointment['id'])
+                        ?.toString() ??
+                        '',
+                  );
                   return ListTile(
                     title: Text(title.toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
                     subtitle: Text(due.toString()),
+                    trailing: const Icon(Icons.chevron_right),
+                    enabled: appointmentId != null,
+                    onTap: appointmentId == null
+                        ? null
+                        : () {
+                            Navigator.pop(context);
+                            _openAppointmentDetails(appointmentId);
+                          },
                   );
                 },
               ),

@@ -240,6 +240,10 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
     return appointment.status.toLowerCase() == 'held';
   }
 
+  bool _isMissedAppointment(Appointment appointment) {
+    return appointment.status.toLowerCase() == 'missed';
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -330,7 +334,11 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
                       sectionTitle: 'MEETING WITH',
                     ),
                     const SizedBox(height: 16),
-                    if (!_isHeldAppointment(appointment) &&
+                    if (_isMissedAppointment(appointment) && _canManageAppointments)
+                      ActionButtonsSection(
+                        onReschedule: () => _rescheduleAppointment(appointment),
+                      )
+                    else if (!_isHeldAppointment(appointment) &&
                         (_canRecordOutcomes || _canManageAppointments))
                       ActionButtonsSection(
                         onRecordOutcome: _canRecordOutcomes ? _recordOutcome : null,
